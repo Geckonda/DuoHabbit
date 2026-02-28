@@ -1,0 +1,85 @@
+version: '3.8'
+
+name: duohabbit
+
+services:
+  # База данных PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: duohabbit-postgres
+    environment:
+      POSTGRES_DB: duohabbit
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root  # В продакшене использовать secrets!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"  # Хост:контейнер
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d duohabbit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - duohabbit-network
+    restart: unless-stopped
+
+  # Adminer (удобная веб-админка для БД - опционально)
+  adminer:
+    image: adminer:latest
+    container_name: duohabbit-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - duohabbit-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: duohabbit-backend
+    ports:
+      - "5000:80"
+      - "5001:443"  # HTTPS если нужно
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=duohabbit;Username=postgres;Password=root;
+      - JWT_Secret=dev-secret-key-here-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - duohabbit-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: duohabbit-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - duohabbit-network
+    restart: unless-stopped
+
+# Тома для персистентности данных
+volumes:
+  postgres_data:
+    name: duohabbit-postgres-data
+
+# Сети для изоляции
+networks:
+  duohabbit-network:
+    name: duohabbit-network
+    driver: bridge

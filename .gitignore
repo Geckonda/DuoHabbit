@@ -1,0 +1,35 @@
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Build
+bin/
+obj/
+dist/
+node_modules/
+
+# Runtime
+*.log
+.DS_Store
+appsettings.Development.json
+.env
+.env.local
+
+# Docker
+*.pid
+
+# Environment files
+*.env
+.env.local
+.env.production
+infrastructure/env/*.env
+!infrastructure/env/development.env  # Только dev можно коммитить
+
+# Database backups
+*.sql
+*.backup
+infrastructure/backups/
+
+# Docker volumes data (не коммитим)
+/postgres_data/
