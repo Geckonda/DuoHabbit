@@ -1,29 +1,17 @@
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
-WORKDIR /src
+FROM python:3.11-slim
 
-# Копируем файлы проектов
-COPY ["src/Duohabbit.API/Duohabbit.API.csproj", "Duohabbit.API/"]
-COPY ["src/Duohabbit.Core/Duohabbit.Core.csproj", "Duohabbit.Core/"]
-COPY ["src/Duohabbit.Infrastructure/Duohabbit.Infrastructure.csproj", "Duohabbit.Infrastructure/"]
-COPY ["src/Duohabbit.Hubs/Duohabbit.Hubs.csproj", "Duohabbit.Hubs/"]
-
-# Восстанавливаем зависимости
-RUN dotnet restore "Duohabbit.API/Duohabbit.API.csproj"
-
-# Копируем весь код
-COPY src/ .
-
-# Публикуем приложение
-WORKDIR "/src/Duohabbit.API"
-RUN dotnet publish -c Release -o /app/publish
-
-# Финальный образ
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
+# Устанавливаем рабочую директорию
 WORKDIR /app
-COPY --from=build /app/publish .
 
+COPY requirements.txt .
 
-# ENV ASPNETCORE_ENVIRONMENT=Development
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Копируем все файлы из локальной директории в контейнер
+COPY . .
 
-ENTRYPOINT ["dotnet", "Duohabbit.API.dll"]
+# Запуск FastAPI через uvicorn
+CMD ["uvicorn", "duohabbit.main:app", "--host", "0.0.0.0", "--port", "8005"]
+
+# LOG_LEVEL контролируется через переменную окружения .env (по умолчанию INFO)
