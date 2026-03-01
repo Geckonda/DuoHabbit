@@ -1,0 +1,9 @@
+python-dotenv
+fastapi
+fastapi-users[sqlalchemy]
+uvicorn[standard]
+redis
+requests
+sqlalchemy
+asyncpg
+pydantic-settings

@@ -8,9 +8,9 @@ services:
     image: postgres:15-alpine
     container_name: duohabbit-postgres
     environment:
-      POSTGRES_DB: duohabbit
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: root  # В продакшене использовать secrets!
+      POSTGRES_DB: duohabbit_db
+      POSTGRES_USER: duohabbit_user
+      POSTGRES_PASSWORD: duohabbit_password  # В продакшене использовать secrets!
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5433:5432"  # Хост:контейнер
@@ -18,7 +18,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d duohabbit"]
+      test: ["CMD-SHELL", "pg_isready -U duohabbit_user -d duohabbit_db"]  # Вот так правильно!
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,24 +40,29 @@ services:
 
   # Backend API
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: duohabbit-backend
-    ports:
-      - "5000:80"
-      - "5001:443"  # HTTPS если нужно
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ASPNETCORE_URLS=http://+:80
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=duohabbit;Username=postgres;Password=root;
-      - JWT_Secret=dev-secret-key-here-change-in-production
-    depends_on:
-      postgres:
-        condition: service_healthy
+    build: ./backend
+    container_name: backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    # depends_on:
+      # redis:
+      #   condition: service_healthy
     networks:
       - duohabbit-network
-    restart: unless-stopped
+    ports:
+    # Даем Web API, но оно доступно только на localhost, а оттуда его подхватит nginx и переведет на https
+      - "127.0.0.1:8005:8005"
+    volumes:
+      - ./backend/data:/app/data
+    mem_limit: 200m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # Frontend
   frontend:
