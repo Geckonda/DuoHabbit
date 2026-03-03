@@ -42,13 +42,14 @@ def parse_env_file(filepath: str) -> Dict[str, str]:
             # Parse KEY=VALUE
             if "=" in line:
                 key, value = line.split("=", 1)
+                # Сохраняем ключ как есть (потом приведем к верхнему)
                 env_dict[key.strip()] = value.strip()
 
     return env_dict
 
 
 def get_auto_field_generators() -> Dict[str, Callable[[], str]]:
-    """Return a dict of field names to generator functions"""
+    """Return a dict of field names to generator functions (ALL UPPERCASE)"""
     return {
         "REDIS_PASSWORD": lambda: generate_password(20),
         "POSTGRES_PASSWORD": lambda: generate_password(24),
@@ -58,16 +59,24 @@ def get_auto_field_generators() -> Dict[str, Callable[[], str]]:
     }
 
 
+def normalize_env_vars(vars_dict: Dict[str, str]) -> Dict[str, str]:
+    """Convert all keys to uppercase"""
+    return {key.upper(): value for key, value in vars_dict.items()}
+
+
 def update_env_file(
     target_file: str,
     fillme_vars: Dict[str, str],
     auto_field_generators: Dict[str, Callable[[], str]],
 ) -> bool:
     """Update or create an env file incrementally"""
-    # Read existing file if it exists
-    existing_vars = parse_env_file(target_file)
+    # Приводим fillme_vars к верхнему регистру
+    fillme_vars = normalize_env_vars(fillme_vars)
+    
+    # Читаем существующий файл и тоже приводим к верхнему
+    existing_vars = normalize_env_vars(parse_env_file(target_file))
 
-    # Check for conflicts with fillme.env
+    # Проверяем конфликты с fillme.env
     for key, value in fillme_vars.items():
         if key in existing_vars and existing_vars[key] != value:
             print(
@@ -78,20 +87,20 @@ def update_env_file(
             print("Aborting to prevent conflicts.")
             return False
 
-    # Determine what needs to be added
+    # Определяем что нужно добавить
     vars_to_add: Dict[str, str] = {}
 
-    # Add missing fields from fillme.env
+    # Добавляем недостающие поля из fillme.env
     for key, value in fillme_vars.items():
         if key not in existing_vars:
             vars_to_add[key] = value
 
-    # Generate and add missing auto-generated fields
+    # Генерируем и добавляем недостающие авто-поля
     for key, generator in auto_field_generators.items():
         if key not in existing_vars:
             vars_to_add[key] = generator()
 
-    # Merge and write
+    # Объединяем
     all_vars = {**existing_vars, **vars_to_add}
 
     if not vars_to_add:

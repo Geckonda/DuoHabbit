@@ -1,0 +1,46 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  backend_up:
+    dir: backend
+    cmds:
+      - uv run fastapi dev duohabbit/main.py
+  backend_quality:
+    dir: backend
+    cmds:
+      - uv run isort duohabbit tests
+      - uv run black duohabbit tests
+      - uv run mypy --strict duohabbit
+      - uv run mypy tests
+      - uv run pylint -j 0 duohabbit
+      - uv run pylint -j 0 tests --disable=duplicate-code,too-many-lines
+    ignore_error: true
+  backend_install:
+    dir: backend
+    cmds:
+      - uv sync
+      - uv sync --dev
+  backend_test:
+    dir: backend
+    cmds:
+      - uv run pytest -v
+  frontend_install:
+    dir: frontend/duohabbit
+    cmds:
+      - pnpm install
+  frontend_up:
+    dir: frontend/duohabbit
+    cmds:
+      - pnpm run dev --host
+  frontend_quality:
+    dir: frontend/duohabbit
+    cmds:
+      - pnpm exec prettier . --write
+      - pnpm run lint
+      - pnpm --package=typescript dlx tsc -b 
+

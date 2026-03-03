@@ -11,7 +11,7 @@ from duohabbit.auth import (
 from duohabbit.db import get_session
 from duohabbit.repositories.users import UsersRepository
 from duohabbit.schemas.auth import AccessTokenClaim
-from duohabbit.schemas.users import UserNew, UserOut
+from duohabbit.schemas.users import UserCreate, UserOut
 from duohabbit.schemas.common import PaginationParams
 from duohabbit.services.users import (
     UserManager,
@@ -68,7 +68,7 @@ async def get_user_endpoint(
 
 @users_router.post("/", status_code=201, response_model=UserOut)
 async def create_user_endpoint(
-    user_in: UserNew,
+    user_in: UserCreate,
     session: AsyncSession = Depends(get_session),
     token_claim: AccessTokenClaim | None = Depends(get_token_claim_optional),
     manager: UserManager = Depends(get_user_manager),

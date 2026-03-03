@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from duohabbit.config import settings
 from duohabbit.db import get_session
 from duohabbit.models.auth import AccessToken
-from duohabbit.models.users import User, UserType
+from duohabbit.models.users import User
 from duohabbit.schemas.auth import AccessTokenClaim
 from duohabbit.services.users import UserManager
 
@@ -65,7 +65,6 @@ def _claimize(user: User) -> AccessTokenClaim:
     """Get a claim from a full user."""
     return AccessTokenClaim(
         user_id=user.id,
-        account_is_company=user.user_type == UserType.COMPANY,
         account_is_platform_admin=user.is_platform_admin,
     )
 

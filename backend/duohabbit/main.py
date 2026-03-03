@@ -1,20 +1,18 @@
 """App entrypoint."""
 
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Type
-
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from typing import AsyncGenerator
 
 from duohabbit.auth import get_user_db, get_user_manager
 from duohabbit.config import settings
 from duohabbit.db import Base, engine, session_fact
 
 from duohabbit.repositories.users import UsersRepository
+from duohabbit.schemas.users import UserCreate
 from duohabbit.routers.auth import auth_router
 from duohabbit.routers.users import users_router
-from duohabbit.schemas.users import PersonProfile, UserNew
 from duohabbit.services.users import create_user
+from fastapi import FastAPI
 
 
 async def init_db() -> None:
@@ -30,12 +28,11 @@ async def init_db() -> None:
     if await users_repo.get_user_by_email("admin@duohabbit.com") is None:
         await create_user(
             users_repo,
-            UserNew(
+            UserCreate(
                 email="admin@duohabbit.com",
                 password="admin",
+                username="duohabbitAdmin",
                 is_platform_admin=True,
-                user_type="person",
-                user_profile=PersonProfile(first_name="Admin", last_name="Admin"),
             ),
             True,
             manager,

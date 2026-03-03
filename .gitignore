@@ -33,3 +33,5 @@ infrastructure/backups/
 
 # Docker volumes data (не коммитим)
 /postgres_data/
+.pnpm-store
+__pycache__

@@ -26,18 +26,6 @@ services:
       - duohabbit-network
     restart: unless-stopped
 
-  # Adminer (удобная веб-админка для БД - опционально)
-  adminer:
-    image: adminer:latest
-    container_name: duohabbit-adminer
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
-    networks:
-      - duohabbit-network
-    restart: unless-stopped
-
   # Backend API
   backend:
     build: ./backend
