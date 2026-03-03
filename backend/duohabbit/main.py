@@ -13,6 +13,7 @@ from duohabbit.routers.auth import auth_router
 from duohabbit.routers.users import users_router
 from duohabbit.services.users import create_user
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 
 async def init_db() -> None:
@@ -64,3 +65,21 @@ def create_app() -> FastAPI:
     return res_app
 
 app = create_app()
+
+app.add_middleware(
+    CORSMiddleware,
+    # allow_origins=[
+    #     "http://localhost:5177",
+    #     "http://localhost:5173",
+    #     # Сюда добавишь прод домены
+    #     "https://yourdomain.com",
+    # ],
+    allow_origins=[
+        "*"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Разрешить все методы (GET, POST, PUT, DELETE...)
+    allow_headers=["*"],  # Разрешить все заголовки
+    expose_headers=["*"],  # Какие заголовки отдавать клиенту
+    max_age=600,  # Кэшировать preflight запросы на 10 минут
+)
