@@ -11,6 +11,7 @@ from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.users import UserCreate
 from duohabit.routers.auth import auth_router
 from duohabit.routers.users import users_router
+from duohabit.routers.habits import habits_router
 from duohabit.services.users import create_user
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     res_app = FastAPI(lifespan=lifespan)
     res_app.include_router(auth_router)
     res_app.include_router(users_router)
+    res_app.include_router(habits_router)
 
     @res_app.get("/")
     def root() -> dict[str, str]:
