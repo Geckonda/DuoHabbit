@@ -1,10 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { RouterView, useRouter } from 'vue-router'
+import { RouterView } from 'vue-router'
 import { useUserStore } from './stores/user'
 import LoaderScreen from './components/LoaderScreen.vue'
 
-const router = useRouter()
 const userStore = useUserStore()
 const showSplash = ref(true)
 
@@ -12,10 +11,7 @@ onMounted(async () => {
   console.log('🔥 Сплеш включен')
   
   const startTime = Date.now()
-  const minLoadTime = 2000 // 2 секунды минимум
-  
-  // Проверяем авторизацию
-  await userStore.checkAuth()
+  const minLoadTime = 2000
   
   // Считаем время
   const elapsedTime = Date.now() - startTime
@@ -28,11 +24,6 @@ onMounted(async () => {
   // Выключаем сплеш
   showSplash.value = false
   console.log('✅ Сплеш выключен')
-  
-  // Редирект если не авторизован
-  if (!userStore.isAuthenticated) {
-    router.push('/login')
-  }
 })
 </script>
 

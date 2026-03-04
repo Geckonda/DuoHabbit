@@ -14,12 +14,11 @@ const routes = [
     component: () => import('../views/LoginView.vue'),
     meta: { requiresGuest: true }
   },
-  // 👇 ДОБАВЛЯЕМ РЕГИСТРАЦИЮ
   {
     path: '/register',
     name: 'register',
     component: () => import('../views/RegisterView.vue'),
-    meta: { requiresGuest: true }  // Только для неавторизованных
+    meta: { requiresGuest: true }
   }
 ]
 
@@ -28,25 +27,26 @@ const router = createRouter({
   routes
 })
 
-// Гвард с учетом лоадера
+// Флаг, что проверка авторизации еще не завершена
+let authChecked = false
+
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   
-  // Ждем пока проверится авторизация
-  if (userStore.isLoading) {
-    await new Promise(resolve => {
-      const unwatch = userStore.$watch('isLoading', (val) => {
-        if (!val) {
-          unwatch()
-          resolve()
-        }
-      })
-    })
+  // ✅ ЖДЕМ пока проверится авторизация, если еще не проверили
+  if (!authChecked) {
+    console.log('⏳ Ожидаем проверку авторизации...')
+    await userStore.checkAuth()
+    authChecked = true
+    console.log('✅ Проверка завершена, auth:', userStore.isAuthenticated)
   }
+  
+  const isAuthenticated = userStore.isAuthenticated
+  console.log('📍 Навигация:', to.path, 'auth:', isAuthenticated)
 
-  if (to.meta.requiresAuth && !userStore.isAuthenticated) {
+  if (to.meta.requiresAuth && !isAuthenticated) {
     next('/login')
-  } else if (to.meta.requiresGuest && userStore.isAuthenticated) {
+  } else if (to.meta.requiresGuest && isAuthenticated) {
     next('/')
   } else {
     next()

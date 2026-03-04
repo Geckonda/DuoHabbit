@@ -8,6 +8,11 @@ export const useUserStore = defineStore('user', () => {
   const isLoading = ref(true)
 
   const checkAuth = async () => {
+    // Если уже проверили и есть пользователь - не делаем лишних запросов
+    if (user.value && isAuthenticated.value) {
+      return
+    }
+    
     isLoading.value = true
     const token = localStorage.getItem('access_token')
     
