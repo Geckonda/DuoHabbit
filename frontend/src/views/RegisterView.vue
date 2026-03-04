@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
-import logo from '../assets/logo.jpg'
+import logo from '../assets/logo.png'
 
 const router = useRouter()
 const userStore = useUserStore()

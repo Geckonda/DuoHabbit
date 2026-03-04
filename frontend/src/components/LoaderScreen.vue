@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import logo from '../assets/logo.jpg'
+import logo from '../assets/logo.png'
 </script>
 
 <style scoped>
