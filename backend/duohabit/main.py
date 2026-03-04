@@ -3,15 +3,15 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from duohabbit.auth import get_user_db, get_user_manager
-from duohabbit.config import settings
-from duohabbit.db import Base, engine, session_fact
+from duohabit.auth import get_user_db, get_user_manager
+from duohabit.config import settings
+from duohabit.db import Base, engine, session_fact
 
-from duohabbit.repositories.users import UsersRepository
-from duohabbit.schemas.users import UserCreate
-from duohabbit.routers.auth import auth_router
-from duohabbit.routers.users import users_router
-from duohabbit.services.users import create_user
+from duohabit.repositories.users import UsersRepository
+from duohabit.schemas.users import UserCreate
+from duohabit.routers.auth import auth_router
+from duohabit.routers.users import users_router
+from duohabit.services.users import create_user
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,13 +26,13 @@ async def init_db() -> None:
     users_repo = UsersRepository(session)
     user_db = await anext(get_user_db(session))
     manager = await anext(get_user_manager(user_db))
-    if await users_repo.get_user_by_email("admin@duohabbit.com") is None:
+    if await users_repo.get_user_by_email("admin@duohabit.com") is None:
         await create_user(
             users_repo,
             UserCreate(
-                email="admin@duohabbit.com",
+                email="admin@duohabit.com",
                 password="admin",
-                username="duohabbitAdmin",
+                username="duohabitAdmin",
                 is_platform_admin=True,
             ),
             True,

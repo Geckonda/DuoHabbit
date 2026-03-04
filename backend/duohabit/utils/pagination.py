@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from sqlalchemy import Select
 
-from duohabbit.schemas.common import PaginationParams
+from duohabit.schemas.common import PaginationParams
 
 T = TypeVar("T")
 

@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from duohabbit.models.users import User
-from duohabbit.schemas.common import PaginationParams
-from duohabbit.utils.pagination import apply_pagination
+from duohabit.models.users import User
+from duohabit.schemas.common import PaginationParams
+from duohabit.utils.pagination import apply_pagination
 
 
 class UnitOfWorkUserDB(SQLAlchemyUserDatabase[User, int]):

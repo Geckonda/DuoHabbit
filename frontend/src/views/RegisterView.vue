@@ -6,14 +6,31 @@ import logo from '../assets/logo.jpg'
 
 const router = useRouter()
 const userStore = useUserStore()
-const email = ref('')
-const password = ref('')
+
+const formData = ref({
+  email: '',
+  username: '',
+  password: '',
+  confirmPassword: ''
+})
+
 const error = ref('')
 const isLoading = ref(false)
 
 const handleSubmit = async () => {
-  if (!email.value || !password.value) {
+  // Валидация
+  if (!formData.value.email || !formData.value.username || !formData.value.password || !formData.value.confirmPassword) {
     error.value = 'Заполните все поля'
+    return
+  }
+  
+  if (formData.value.password !== formData.value.confirmPassword) {
+    error.value = 'Пароли не совпадают'
+    return
+  }
+  
+  if (formData.value.password.length < 6) {
+    error.value = 'Пароль должен быть не менее 6 символов'
     return
   }
   
@@ -21,10 +38,20 @@ const handleSubmit = async () => {
   error.value = ''
   
   try {
-    await userStore.login(email.value, password.value)
+    // Отправляем только нужные поля (без confirmPassword)
+    await userStore.register({
+      email: formData.value.email,
+      username: formData.value.username,
+      password: formData.value.password
+    })
     router.push('/')
   } catch (err) {
-    error.value = 'Неверный email или пароль'
+    if (err.response?.status === 400) {
+      error.value = 'Email уже используется или некорректные данные'
+    } else {
+      error.value = 'Ошибка регистрации'
+    }
+    console.error(err)
   } finally {
     isLoading.value = false
   }
@@ -32,24 +59,24 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <div class="login-screen">
+  <div class="register-screen">
     
-    <div class="login-container">
-      <!-- Лого с глянцевым эффектом -->
+    <div class="register-container">
+      <!-- Лого -->
       <div class="logo-wrapper">
         <div class="logo-glass">
           <img :src="logo" alt="Logo" class="logo">
         </div>
         <h1 class="app-name">DuoHabit</h1>
-        <p class="app-subtitle">Добро пожаловать</p>
+        <p class="app-subtitle">Создайте аккаунт</p>
       </div>
 
-      <!-- Форма с глянцевым стеклом -->
-      <form @submit.prevent="handleSubmit" class="login-form">
+      <!-- Форма регистрации -->
+      <form @submit.prevent="handleSubmit" class="register-form">
         <div class="input-group">
           <div class="input-icon">📧</div>
           <input 
-            v-model="email" 
+            v-model="formData.email" 
             type="email" 
             placeholder="Email"
             required
@@ -58,18 +85,45 @@ const handleSubmit = async () => {
         </div>
         
         <div class="input-group">
+          <div class="input-icon">👤</div>
+          <input 
+            v-model="formData.username" 
+            type="text" 
+            placeholder="Имя пользователя"
+            required
+            :disabled="isLoading"
+          >
+        </div>
+        
+        <div class="input-group">
           <div class="input-icon">🔒</div>
           <input 
-            v-model="password" 
+            v-model="formData.password" 
             type="password" 
             placeholder="Пароль"
             required
             :disabled="isLoading"
           >
         </div>
+        
+        <div class="input-group">
+          <div class="input-icon">✓</div>
+          <input 
+            v-model="formData.confirmPassword" 
+            type="password" 
+            placeholder="Подтвердите пароль"
+            required
+            :disabled="isLoading"
+          >
+        </div>
 
-        <div class="forgot-password">
-          <a href="#" class="forgot-link">Забыли пароль?</a>
+        <!-- Условия использования -->
+        <div class="terms">
+          <input type="checkbox" id="terms" required>
+          <label for="terms">
+            Я принимаю <a href="#" class="terms-link">условия использования</a> и 
+            <a href="#" class="terms-link">политику конфиденциальности</a>
+          </label>
         </div>
 
         <p v-if="error" class="error-message">
@@ -79,16 +133,16 @@ const handleSubmit = async () => {
 
         <button 
           type="submit" 
-          class="login-button"
+          class="register-button"
           :disabled="isLoading"
         >
-          <span v-if="!isLoading">Войти</span>
+          <span v-if="!isLoading">Создать аккаунт</span>
           <span v-else class="button-loader"></span>
         </button>
 
-        <div class="signup-prompt">
-        <span class="prompt-text">Нет аккаунта?</span>
-          <router-link to="/register" class="signup-link">Зарегистрироваться</router-link>
+        <div class="login-prompt">
+          <span class="prompt-text">Уже есть аккаунт?</span>
+          <router-link to="/login" class="login-link">Войти</router-link>
         </div>
       </form>
     </div>
@@ -96,22 +150,8 @@ const handleSubmit = async () => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-html, body {
-  overflow: hidden; /* убить скролл на корню */
-  height: 100%;
-  width: 100%;
-  position: fixed; /* для мобилок особенно */
-}
-
-.login-screen {
+/* Копируем ВСЕ стили из login, но меняем class-префиксы */
+.register-screen {
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -120,13 +160,9 @@ html, body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   position: relative;
   overflow: hidden;
-  box-sizing: border-box;
-  margin: 0;
-  width: 100%;
 }
 
-/* Основной контейнер - жидкое стекло */
-.login-container {
+.register-container {
   width: 100%;
   max-width: 400px;
   background: rgba(255, 255, 255, 0.7);
@@ -143,16 +179,15 @@ html, body {
   z-index: 1;
 }
 
-/* Лого с глянцем */
 .logo-wrapper {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .logo-glass {
-  width: 100px;
-  height: 100px;
-  margin: 0 auto 16px;
+  width: 90px;
+  height: 90px;
+  margin: 0 auto 12px;
   background: rgba(255, 255, 255, 0.3);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -167,14 +202,14 @@ html, body {
 }
 
 .logo {
-  width: 80px;
-  height: 80px;
+  width: 70px;
+  height: 70px;
   border-radius: 24px;
   object-fit: cover;
 }
 
 .app-name {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
   margin: 0 0 4px;
   background: linear-gradient(135deg, #1a1a1a 0%, #4a4a4a 100%);
@@ -185,13 +220,12 @@ html, body {
 }
 
 .app-subtitle {
-  font-size: 15px;
+  font-size: 14px;
   color: rgba(0, 0, 0, 0.5);
   font-weight: 400;
   margin: 0;
 }
 
-/* Группа инпутов */
 .input-group {
   position: relative;
   margin-bottom: 16px;
@@ -209,13 +243,13 @@ html, body {
 
 .input-group input {
   width: 100%;
-  padding: 18px 18px 18px 52px;
+  padding: 16px 16px 16px 52px;
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1.5px solid rgba(255, 255, 255, 0.8);
   border-radius: 20px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: #1a1a1a;
   transition: all 0.3s ease;
@@ -240,27 +274,28 @@ html, body {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* Забыли пароль */
-.forgot-password {
-  text-align: right;
-  margin: -8px 0 20px;
-}
-
-.forgot-link {
-  color: rgba(0, 0, 0, 0.6);
-  text-decoration: none;
+/* Условия использования */
+.terms {
+  margin: 8px 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 14px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.terms input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #8B5CF6;
+}
+
+.terms-link {
+  color: #8B5CF6;
+  text-decoration: none;
   font-weight: 500;
-  transition: color 0.3s;
-  padding: 8px 0;
-  display: inline-block;
 }
 
-.forgot-link:active {
-  color: #000;
-}
-
-/* Ошибка */
 .error-message {
   background: rgba(255, 59, 48, 0.1);
   backdrop-filter: blur(10px);
@@ -278,29 +313,24 @@ html, body {
   animation: shake 0.5s ease-in-out;
 }
 
-.error-icon {
-  font-size: 18px;
-}
-
-/* Кнопка входа */
-.login-button {
+.register-button {
   width: 100%;
-  padding: 18px;
+  padding: 16px;
   background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
   border: none;
   border-radius: 24px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: white;
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3);
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   position: relative;
   overflow: hidden;
 }
 
-.login-button::before {
+.register-button::before {
   content: '';
   position: absolute;
   top: 0;
@@ -311,33 +341,22 @@ html, body {
   transition: left 0.5s;
 }
 
-.login-button:active::before {
+.register-button:active::before {
   left: 100%;
 }
 
-.login-button:active {
+.register-button:active {
   transform: scale(0.98);
   box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4);
 }
 
-.login-button:disabled {
+.register-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
   transform: none;
 }
 
-.button-loader {
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s linear infinite;
-}
-
-/* Регистрация */
-.signup-prompt {
+.login-prompt {
   text-align: center;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.4);
@@ -345,26 +364,21 @@ html, body {
 
 .prompt-text {
   color: rgba(0, 0, 0, 0.5);
-  font-size: 15px;
+  font-size: 14px;
   margin-right: 8px;
 }
 
-.signup-link {
+.login-link {
   color: #8B5CF6;
   text-decoration: none;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   transition: all 0.3s;
   padding: 8px 0;
   display: inline-block;
 }
 
-.signup-link:active {
-  opacity: 0.7;
-  transform: translateX(2px);
-}
-
-/* Анимации */
+/* Те же анимации */
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -384,31 +398,6 @@ html, body {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
-}
-
-/* Mobile first адаптация */
-@media (max-width: 380px) {
-  .login-container {
-    padding: 24px 16px;
-  }
-  
-  .logo-glass {
-    width: 80px;
-    height: 80px;
-  }
-  
-  .logo {
-    width: 64px;
-    height: 64px;
-  }
-  
-  .app-name {
-    font-size: 28px;
-  }
-  
-  .input-group input {
-    padding: 16px 16px 16px 48px;
-  }
 }
 
 /* Убиваем автозаполнение нахуй */

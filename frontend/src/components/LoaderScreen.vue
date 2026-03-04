@@ -3,7 +3,7 @@
     <div class="logo-container">
       <div class="logo-wrapper">
         <img :src="logo" alt="Logo" class="logo">
-        <!-- <h1 class="brand-name">DouHabbit</h1> -->
+        <!-- <h1 class="brand-name">DuoHabit</h1> -->
       </div>
     </div>
   </div>

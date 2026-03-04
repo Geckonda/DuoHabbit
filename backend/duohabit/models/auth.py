@@ -4,7 +4,7 @@ from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTa
 from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
-from duohabbit.db import Base
+from duohabit.db import Base
 
 # pylint: disable=too-few-public-methods
 # Models exist for a different reason.

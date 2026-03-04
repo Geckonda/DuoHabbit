@@ -2,29 +2,35 @@ import api from './index'
 
 export const auth = {
   async login(email, password) {
+    // fastapi-users ожидает form-data с полем username
     const formData = new FormData()
-    formData.append('username', email)
+    formData.append('username', email)  // да, email в поле username
     formData.append('password', password)
     
     const response = await api.post('/auth/login', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
-    if (response.data.access_token) {
-      localStorage.setItem('access_token', response.data.access_token)
-    }
-    return response.data
+    return response.data // { access_token: string, token_type: string }
+  },
+  
+  async register(userData) {
+    // userData должен соответствовать UserCreate из бекенда
+    const response = await api.post('/auth/register', {
+      email: userData.email,
+      username: userData.username,
+      password: userData.password,
+      is_platform_admin: userData.is_platform_admin || false
+    })
+    
+    return response.data // обычно возвращает UserRead
   },
   
   async logout() {
-    try {
-      await api.post('/auth/logout')
-    } finally {
-      localStorage.removeItem('access_token')
-    }
+    return api.post('/auth/logout')
   },
   
   async getMe() {
-    return api.get('/users/me')
+    return api.get('/users/me') // возвращает UserRead
   }
 }

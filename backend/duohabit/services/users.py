@@ -6,11 +6,11 @@ from fastapi_users import exceptions as fastapi_users_exceptions
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.schemas import BaseUserCreate
 
-from duohabbit.models.users import User
-from duohabbit.repositories.users import UnitOfWorkUserDB, UsersRepository
-from duohabbit.schemas.auth import AccessTokenClaim
-from duohabbit.schemas.common import PaginationParams
-from duohabbit.schemas.users import (
+from duohabit.models.users import User
+from duohabit.repositories.users import UnitOfWorkUserDB, UsersRepository
+from duohabit.schemas.auth import AccessTokenClaim
+from duohabit.schemas.common import PaginationParams
+from duohabit.schemas.users import (
     UserCreate,  
     UserOut,    
     UserUpdate,  

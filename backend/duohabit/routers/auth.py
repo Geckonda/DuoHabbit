@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from duohabbit.auth import login_router
+from duohabit.auth import login_router
 
 auth_router = APIRouter(prefix="/auth", tags=["Auth"])
 

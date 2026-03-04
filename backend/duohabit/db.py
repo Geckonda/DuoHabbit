@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from duohabbit.config import settings
+from duohabit.config import settings
 
 
 @lru_cache()

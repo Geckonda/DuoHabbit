@@ -13,6 +13,13 @@ const routes = [
     name: 'login',
     component: () => import('../views/LoginView.vue'),
     meta: { requiresGuest: true }
+  },
+  // 👇 ДОБАВЛЯЕМ РЕГИСТРАЦИЮ
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('../views/RegisterView.vue'),
+    meta: { requiresGuest: true }  // Только для неавторизованных
   }
 ]
 

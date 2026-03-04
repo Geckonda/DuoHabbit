@@ -54,7 +54,7 @@ def get_auto_field_generators() -> Dict[str, Callable[[], str]]:
         "REDIS_PASSWORD": lambda: generate_password(20),
         "POSTGRES_PASSWORD": lambda: generate_password(24),
         "POSTGRES_USER": lambda: generate_name(12, "postgres"),
-        "POSTGRES_DB": lambda: generate_name(10, "duohabbit"),
+        "POSTGRES_DB": lambda: generate_name(10, "duohabit"),
         "JWT_SECRET": lambda: generate_password(24),
     }
 

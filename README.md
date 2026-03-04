@@ -1,6 +1,6 @@
-# 🦊 Duohabbit
+# 🦊 Duohabit
 
-<!-- [![CI Status](https://github.com/your-org/duohabbit/actions/workflows/ci.yml/badge.svg)](https://github.com/Geckonda/duohabbit/actions/workflows/ci.yml) -->
+<!-- [![CI Status](https://github.com/your-org/duohabit/actions/workflows/ci.yml/badge.svg)](https://github.com/Geckonda/duohabit/actions/workflows/ci.yml) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 
@@ -9,7 +9,7 @@
 
 ## 📋 О проекте
 
-Duohabbit — это веб-платформа для совместного формирования привычек, где успех зависит от каждого участника. Главная особенность — **общая ответственность за стрик**: если один пропустил день, стрик сбрасывается у всех.
+Duohabit — это веб-платформа для совместного формирования привычек, где успех зависит от каждого участника. Главная особенность — **общая ответственность за стрик**: если один пропустил день, стрик сбрасывается у всех.
 
 ### 🎯 Ключевая механика
 1. Создай привычку
@@ -58,8 +58,8 @@ Frontend (Vue 3)  ←→  Backend (ASP.NET Core)  ←→  Database (PostgreSQL)
 
 ```bash
 # 1. Клонируем репозиторий
-git clone https://github.com/your-org/duohabbit.git
-cd duohabbit
+git clone https://github.com/your-org/duohabit.git
+cd duohabit
 
 # 2. Запускаем всё одной командой
 docker-compose up -d
@@ -79,7 +79,7 @@ docker-compose logs -f
 ```bash
 cd backend
 dotnet restore
-dotnet run --project src/Duohabbit.API
+dotnet run --project src/Duohabit.API
 ```
 
 **Frontend:**
@@ -94,18 +94,18 @@ npm run dev
 ## 📁 Структура проекта
 
 ```
-duohabbit/
+duohabit/
 ├── .github/                    # CI/CD pipelines
 ├── docs/                       # Документация
 ├── infrastructure/             # Nginx, настройки
 ├── backend/
 │   ├── src/
-│   │   ├── Duohabbit.API/      # REST API endpoints
-│   │   ├── Duohabbit.Core/      # Доменные модели
-│   │   ├── Duohabbit.Infrastructure/ # Репозитории, EF Core
-│   │   └── Duohabbit.Hubs/      # SignalR хабы
+│   │   ├── Duohabit.API/      # REST API endpoints
+│   │   ├── Duohabit.Core/      # Доменные модели
+│   │   ├── Duohabit.Infrastructure/ # Репозитории, EF Core
+│   │   └── Duohabit.Hubs/      # SignalR хабы
 │   ├── tests/                   # Unit и Integration тесты
-│   └── Duohabbit.sln
+│   └── Duohabit.sln
 ├── frontend/
 │   ├── src/
 │   │   ├── components/         # Vue компоненты
@@ -195,7 +195,7 @@ npm run test:unit
 
 ### Backend (.env)
 ```env
-ConnectionStrings__DefaultConnection=Host=postgres;Database=duohabbit;Username=user;Password=pass
+ConnectionStrings__DefaultConnection=Host=postgres;Database=duohabit;Username=user;Password=pass
 ASPNETCORE_ENVIRONMENT=Development
 JWT_Secret=your-secret-key-here
 ```
@@ -238,10 +238,10 @@ docker-compose down -v
 ### Database
 ```bash
 # Подключиться к PostgreSQL
-docker exec -it duohabbit-postgres-1 psql -U duohabbit_user -d duohabbit
+docker exec -it duohabit-postgres-1 psql -U duohabit_user -d duohabit
 
 # Создать миграцию (backend)
-dotnet ef migrations add InitialCreate --project src/Duohabbit.Infrastructure --startup-project src/Duohabbit.API
+dotnet ef migrations add InitialCreate --project src/Duohabit.Infrastructure --startup-project src/Duohabit.API
 ```
 
 ---

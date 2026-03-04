@@ -1,9 +1,9 @@
-# Duohabbit App
+# Duohabit App
 
 ## How to develop - general
 
 1. Grab the repo.
-2. On the host machine, run `python backend/duohabbit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files.
+2. On the host machine, run `python backend/duohabit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files.
 3. In VSCode or Cursor, open the repo in container. Make sure you have docker and docker-compose available.
 4. Run `task backend_install` and `task frontend_install` to install the dependencies.
 5. Run `task backend_up` to start the backend.
@@ -24,7 +24,7 @@ into the app.
 5. Between requests and outside redis/db, keep the app stateless.
 6. Keep the SQL fast: if you need to query in a loop, write a better query and add to an appropriate repository.
 Remember that services should commit, not repositories.
-7. To drop the database for **LOCAL** iterations, run `uv run python -m duohabbit.scripts.danger_dropdb --yes-i-am-sure` from `backend`.
+7. To drop the database for **LOCAL** iterations, run `uv run python -m duohabit.scripts.danger_dropdb --yes-i-am-sure` from `backend`.
 8. To run tests, run `task backend_test`. Current testing rules: for every major router, a happy-path test and an error conversion test. For every service, test happy path and notable error paths (not found, not unique, authorization) for every method. Use the `@pytest.mark.asyncio(loop_scope="session")` decorator to ensure the tests run in a single event loop. Failing this will crash them with a somewhat cryptic error! Do not test what FastAPI and Pydantic will ensure, we trust them to be well-tested, test our code instead.
 
 ### Environment variable flow
@@ -43,7 +43,7 @@ Remember that services should commit, not repositories.
 ## How to deploy
 
 1. Grab the repo.
-2. On the host machine, run `/backend/duohabbit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files.
+2. On the host machine, run `/backend/duohabit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files.
 3. The rest is WIP for now, woops.
-800. On startup, the app will create an admin user, credentials are `admin@duohabbit.com` and `admin`.
+800. On startup, the app will create an admin user, credentials are `admin@duohabit.com` and `admin`.
 Change their password before going public.

@@ -4,8 +4,8 @@ from fastapi_users.db import SQLAlchemyBaseUserTable
 from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from duohabbit.db import Base
-from duohabbit.models.mixins import TimestampMixin
+from duohabit.db import Base
+from duohabit.models.mixins import TimestampMixin
 
 
 class User(TimestampMixin, SQLAlchemyBaseUserTable[int], Base):

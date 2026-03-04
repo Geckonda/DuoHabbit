@@ -10,7 +10,7 @@ import sys
 
 from sqlalchemy import text
 
-from duohabbit.db import engine
+from duohabit.db import engine
 
 
 async def drop_all_tables() -> None:

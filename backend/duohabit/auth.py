@@ -13,12 +13,12 @@ from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from duohabbit.config import settings
-from duohabbit.db import get_session
-from duohabbit.models.auth import AccessToken
-from duohabbit.models.users import User
-from duohabbit.schemas.auth import AccessTokenClaim
-from duohabbit.services.users import UserManager
+from duohabit.config import settings
+from duohabit.db import get_session
+from duohabit.models.auth import AccessToken
+from duohabit.models.users import User
+from duohabit.schemas.auth import AccessTokenClaim
+from duohabit.services.users import UserManager
 
 
 async def get_user_db(

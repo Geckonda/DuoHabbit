@@ -3,17 +3,17 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from duohabbit.auth import (
+from duohabit.auth import (
     get_token_claim,
     get_token_claim_optional,
     get_user_manager,
 )
-from duohabbit.db import get_session
-from duohabbit.repositories.users import UsersRepository
-from duohabbit.schemas.auth import AccessTokenClaim
-from duohabbit.schemas.users import UserCreate, UserOut
-from duohabbit.schemas.common import PaginationParams
-from duohabbit.services.users import (
+from duohabit.db import get_session
+from duohabit.repositories.users import UsersRepository
+from duohabit.schemas.auth import AccessTokenClaim
+from duohabit.schemas.users import UserCreate, UserOut
+from duohabit.schemas.common import PaginationParams
+from duohabit.services.users import (
     UserManager,
     create_user,
     get_user,
