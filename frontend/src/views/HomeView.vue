@@ -29,6 +29,7 @@ const handleLogout = async () => {
 .home {
   min-height: 100vh;
   background: #f5f5f5;
+  border-radius: 8px;
 }
 
 .header {
@@ -38,6 +39,7 @@ const handleLogout = async () => {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border-radius: 8px 8px 0 0 ;
 }
 
 .header h1 {
@@ -67,5 +69,6 @@ const handleLogout = async () => {
   border-radius: 12px;
   margin-bottom: 12px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  color: black;
 }
 </style>
