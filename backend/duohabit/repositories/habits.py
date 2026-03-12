@@ -14,7 +14,9 @@ class HabitRepository:
     def __init__(self, session: AsyncSession):
         self._session = session
     
-    # ========== HABIT METHODS ==========
+    async def commit(self) -> None:
+        """Commit the current transaction."""
+        await self._session.commit()
     
     async def create(
         self, 

@@ -13,7 +13,42 @@ from duohabit.schemas.habits import (
     HabitStats,
     HabitType
 )
-from duohabit.models.habits import HabitCheck
+from duohabit.models.habits import Habit, HabitType, HabitCheck
+
+
+def habit_model_to_schema(habit_model: Habit, checks: list[HabitCheck] | None = None) -> HabitRead | HabitWithChecks:
+    if checks:
+        return HabitWithChecks(
+            title=habit_model.title,
+            description=habit_model.description,
+            is_active=habit_model.is_active,
+            is_private=habit_model.is_private,
+            habit_type=HabitType(habit_model.habit_type),
+            id=habit_model.id,
+            user_id=habit_model.user_id,
+            current_streak=habit_model.current_streak,
+            recent_checks=checks
+        )
+    else:
+        return HabitRead(
+            id=habit_model.id,
+            user_id=habit_model.user_id,
+            title=habit_model.title,
+            description=habit_model.description,
+            is_active=habit_model.is_active,
+            is_private=habit_model.is_private,
+            habit_type=HabitType(habit_model.habit_type),
+            current_streak=habit_model.current_streak
+        )
+
+
+def habit_check_model_to_schema(habit_check_model: HabitCheck) -> HabitCheckRead:
+    return HabitCheckRead(
+        habit_id=habit_check_model.id,
+        check_date=habit_check_model.check_date,
+        id=habit_check_model.id,
+        created_at=habit_check_model.created_at
+    )
 
 
 async def create_habit(
@@ -28,7 +63,10 @@ async def create_habit(
         description=habit_data.description,
         habit_type=habit_data.habit_type
     )
-    return HabitRead.model_validate(habit)
+    
+    await repo.commit()
+
+    return habit_model_to_schema(habit)
 
 
 async def get_user_habits(
@@ -38,7 +76,7 @@ async def get_user_habits(
 ) -> list[HabitRead]:
     """Get all habits for a user."""
     habits = await repo.get_by_user(user_id, only_active=only_active)
-    return [HabitRead.model_validate(h) for h in habits]
+    return [habit_model_to_schema(h) for h in habits]
 
 
 async def get_habit(
@@ -52,16 +90,16 @@ async def get_habit(
     if not habit:
         raise Exception("Habit not found")
     
+    if habit.user_id != user_id:
+        raise Exception("User can show only his habits.")
+    
     if with_checks:
         recent_checks = sorted(habit.checks, key=lambda x: x.check_date, reverse=True)[:30]
-        return HabitWithChecks(
-            **HabitRead.model_validate(habit).model_dump(),
-            recent_checks=[HabitCheckRead.model_validate(c) for c in recent_checks],
-            total_checks=len(habit.checks),
-            last_check_date=habit.checks[-1].check_date if habit.checks else None
-        )
+        checks = [habit_check_model_to_schema(ch) for ch in recent_checks]
+
+        return habit_model_to_schema(habit, checks)
     
-    return HabitRead.model_validate(habit)
+    return habit_model_to_schema(habit)
 
 
 async def update_habit(
@@ -74,10 +112,16 @@ async def update_habit(
     habit = await repo.get_by_id(habit_id, user_id)
     if not habit:
         raise Exception("Habit not found")
+
+    if habit.user_id != user_id:
+        raise Exception("User can edit only his habits.")
     
     update_data = habit_data.model_dump(exclude_unset=True)
     updated = await repo.update(habit, **update_data)
-    return HabitRead.model_validate(updated)
+
+    await repo.commit()
+    
+    return habit_model_to_schema(updated)
 
 
 async def delete_habit(
@@ -89,7 +133,10 @@ async def delete_habit(
     habit = await repo.get_by_id(habit_id, user_id)
     if not habit:
         raise Exception("Habit not found")
+    if habit.user_id != user_id:
+        raise Exception("User can delete only his habits.")
     await repo.delete(habit)
+    await repo.commit()
 
 
 async def archive_habit(
@@ -101,8 +148,11 @@ async def archive_habit(
     habit = await repo.get_by_id(habit_id, user_id)
     if not habit:
         raise Exception("Habit not found")
+    if habit.user_id != user_id:
+        raise Exception("User can archive only his habits.")
     archived = await repo.archive(habit)
-    return HabitRead.model_validate(archived)
+    await repo.commit()
+    return habit_model_to_schema(archived)
 
 
 async def restore_habit(
@@ -114,8 +164,11 @@ async def restore_habit(
     habit = await repo.get_by_id(habit_id, user_id)
     if not habit:
         raise Exception("Habit not found")
+    if habit.user_id != user_id:
+        raise Exception("User can archive only his habits.")
     restored = await repo.restore(habit)
-    return HabitRead.model_validate(restored)
+    await repo.commit()
+    return habit_model_to_schema(restored)
 
 
 # ========== HABIT CHECKS (через тот же репозиторий) ==========
@@ -136,18 +189,17 @@ async def check_habit(
     if not habit.is_active:
         raise Exception("Cannot check archived habit")
     
-    # Создаем чек через репозиторий
-    try:
-        check = await repo.create_check(habit_id, check_date)
-    except ValueError as e:
-        raise Exception(str(e))
+    if habit.user_id != user_id:
+        raise Exception("User can check only his habits.")
     
-    # Пересчитываем стрик
+    check = await repo.create_check(habit_id, check_date)
+    
     new_streak = await _calculate_streak(repo, habit_id)
     
-    # Обновляем стрик в привычке
     if new_streak != habit.current_streak:
         await repo.update(habit, current_streak=new_streak)
+
+    await repo.commit()
     
     return {
         "checked": True,
@@ -164,13 +216,14 @@ async def get_habit_checks(
     limit: int = 30
 ) -> list[HabitCheckRead]:
     """Get last N checks for a habit."""
-    # Проверяем, что привычка принадлежит юзеру
     habit = await repo.get_by_id(habit_id, user_id)
     if not habit:
         raise Exception("Habit not found")
+    if habit.user_id != user_id:
+        raise Exception("User can get only his check habits.")
     
     checks = await repo.get_checks(habit_id, limit)
-    return [HabitCheckRead.model_validate(c) for c in checks]
+    return [habit_check_model_to_schema(c) for c in checks]
 
 
 async def delete_check(

@@ -20,7 +20,8 @@ class HabitBase(BaseModel):
     title: str
     description: str | None = None
     is_active: bool = True
-    habit_type: HabitType = HabitType.DAILY  # 👈 добавил тип с дефолтом
+    is_private: bool = True
+    habit_type: HabitType = HabitType.DAILY
 
 
 class HabitCreate(HabitBase):
@@ -35,7 +36,7 @@ class HabitUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     is_active: bool | None = None
-    habit_type: HabitType | None = None  # 👈 можно менять тип
+    habit_type: HabitType | None = None
 
 
 class HabitRead(HabitBase):
@@ -43,9 +44,9 @@ class HabitRead(HabitBase):
     
     id: int
     user_id: int
-    current_streak: int = 0  # 👈 текущий стрик
-    created_at: date | None = None  # 👈 из TimestampMixin
-    updated_at: date | None = None  # 👈 из TimestampMixin
+    current_streak: int = 0
+    created_at: date | None = None
+    updated_at: date | None = None
     
     class Config:
         from_attributes = True
@@ -62,7 +63,7 @@ class HabitCheckCreate(BaseModel):
     """Schema for creating a habit check."""
     
     habit_id: int
-    check_date: date | None = None  # если не указан - сегодня
+    check_date: date | None = None
 
 
 class HabitCheckRead(HabitCheckBase):

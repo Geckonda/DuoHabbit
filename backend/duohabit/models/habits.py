@@ -28,8 +28,8 @@ class Habit(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(String(500))
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_private: Mapped[bool] = mapped_column(Boolean, default=True)
     
-    # 👇 ПРОСТО STRING (в базе будет 'daily', 'weekly' и т.д.)
     habit_type: Mapped[str] = mapped_column(
         String(20), 
         default=HabitType.DAILY.value,
