@@ -58,7 +58,6 @@ onMounted(async () => {
 html, body {
   height: 100%;
   width: 100%;
-  overflow: hidden;
 }
 
 body {
@@ -70,7 +69,6 @@ body {
 #app {
   height: 100vh;
   width: 100vw;
-  overflow: hidden;
   position: relative; /* 👈 важно для z-index */
 }
 

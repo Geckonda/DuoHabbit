@@ -19,6 +19,24 @@ const routes = [
     name: 'register',
     component: () => import('../views/RegisterView.vue'),
     meta: { requiresGuest: true }
+  },
+  {
+    path: '/habits/new',
+    name: 'habit-create',
+    component: () => import('../views/HabitCreateView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/habits/:id',
+    name: 'habit-detail',
+    component: () => import('../views/HabitDetailView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/habits/:id/edit',
+    name: 'habit-edit',
+    component: () => import('../views/HabitCreateView.vue'), // переиспользуем форму
+    meta: { requiresAuth: true }
   }
 ]
 
