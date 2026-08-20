@@ -1,7 +1,7 @@
 """Habit schemas."""
 
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
@@ -68,9 +68,11 @@ class HabitCheckCreate(BaseModel):
 
 class HabitCheckRead(HabitCheckBase):
     """Schema for reading a habit check."""
-    
+
     id: int
-    created_at: date | None = None
+    # Именно datetime: в модели это timestamp, а pydantic не приводит
+    # время к дате и роняет ответ валидацией
+    created_at: datetime | None = None
     
     class Config:
         from_attributes = True

@@ -6,9 +6,13 @@ from pydantic import BaseModel, EmailStr
 
 class UserOut(schemas.BaseUser[int]):
     """Schema for reading user data (response)."""
-    
+
+    # Приватные поля скрываются от чужих глаз в user_model_to_schema и вырезаются
+    # из ответа через response_model_exclude_none, поэтому они допускают None:
+    # у BaseUser email обязателен, и без переопределения сборка схемы падала бы
+    email: EmailStr | None = None  # type: ignore[assignment]
     username: str
-    is_platform_admin: bool = False
+    is_platform_admin: bool | None = False
 
 
 class UserCreate(schemas.BaseUserCreate):

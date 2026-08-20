@@ -49,6 +49,15 @@ class UsersRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_users_by_ids(self, user_ids: list[int]) -> list[User]:
+        """Get users by a list of IDs in a single query."""
+        if not user_ids:
+            return []
+
+        stmt = select(User).where(User.id.in_(user_ids))
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_user(self, user_id: int) -> User | None:
         """Get a single user by ID (or None)"""
         stmt = select(User).where(User.id == user_id)
