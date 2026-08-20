@@ -35,3 +35,4 @@ infrastructure/backups/
 /postgres_data/
 .pnpm-store
 __pycache__
+.devcontainer/pgadmin/servers.json

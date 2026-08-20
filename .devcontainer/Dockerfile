@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y \
     python3 \
     curl \
     nodejs \
-    git
+    git \
+    libatomic1
 
 
 # Get uv

@@ -3,8 +3,8 @@
 ## How to develop - general
 
 1. Grab the repo.
-2. On the host machine, run `python backend/duohabit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files.
-3. In VSCode or Cursor, open the repo in container. Make sure you have docker and docker-compose available.
+2. On the host machine, run `python backend/duohabit/scripts/generate_env.py` to generate the .env and .devcontainer/.env files. Or use "python3" command instead "python", if python installed on your machine, but not working.
+3. In VSCode or Cursor, install devcontainer VSExtension and open the repo in container(devcontainer). Make sure you have docker and docker-compose available.
 4. Run `task backend_install` and `task frontend_install` to install the dependencies.
 5. Run `task backend_up` to start the backend.
 6. Run `task frontend_up` to start the frontend.
