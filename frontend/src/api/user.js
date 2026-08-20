@@ -9,4 +9,7 @@ export const users = {
   // Пользователь по ID
   getById: (userId) =>
     api.get(`/users/${userId}`),
+  // Список пользователей (для поиска при добавлении в группу)
+  getAll: (limit = 100) =>
+    api.get('/users/', { params: { limit } })
 }

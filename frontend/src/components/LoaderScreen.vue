@@ -3,7 +3,6 @@
     <div class="logo-container">
       <div class="logo-wrapper">
         <img :src="logo" alt="Logo" class="logo">
-        <!-- <h1 class="brand-name">DuoHabit</h1> -->
       </div>
     </div>
   </div>
@@ -14,8 +13,6 @@ import logo from '../assets/logo.png'
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-
 .loader-screen {
   position: fixed;
   top: 0;
@@ -49,20 +46,6 @@ import logo from '../assets/logo.png'
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
 }
 
-.brand-name {
-  font-family: 'Poppins', sans-serif;
-  font-size: 36px;
-  font-weight: 700;
-  margin: 0;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f0f0 50%, #e0e0e0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  letter-spacing: 1px;
-  animation: glow 3s ease-in-out infinite;
-}
-
 @keyframes fadeIn {
   from { 
     opacity: 0; 
@@ -87,27 +70,10 @@ import logo from '../assets/logo.png'
   }
 }
 
-@keyframes glow {
-  0% { 
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-  50% { 
-    text-shadow: 0 4px 15px rgba(255, 255, 255, 0.5);
-  }
-  100% { 
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-}
-
 @media (min-width: 768px) {
   .logo {
     max-width: 300px;
     border-radius: 32px; /* побольше скругление на десктопе */
-  }
-  
-  .brand-name {
-    font-size: 48px;
-    letter-spacing: 2px;
   }
 }
 
@@ -115,10 +81,6 @@ import logo from '../assets/logo.png'
   .logo {
     max-width: 150px;
     border-radius: 16px; /* поменьше на мобилках */
-  }
-  
-  .brand-name {
-    font-size: 28px;
   }
 }
 </style>

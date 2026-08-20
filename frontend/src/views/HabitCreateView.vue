@@ -1,13 +1,18 @@
 <!-- views/HabitCreateView.vue -->
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useHabitsStore } from '../stores/habit'
+import AppHeader from '../components/AppHeader.vue'
+import PillButton from '../components/PillButton.vue'
 
+const route = useRoute()
 const router = useRouter()
 const habitsStore = useHabitsStore()
 
-// Типы привычек из схемы
+const isEditMode = computed(() => !!route.params.id)
+const habitId = computed(() => Number(route.params.id))
+
 const habitTypes = [
   { value: 'daily', label: 'Ежедневно', icon: '📅' },
   { value: 'weekdays', label: 'По будням', icon: '💼' },
@@ -15,7 +20,6 @@ const habitTypes = [
   { value: 'monthly', label: 'Ежемесячно', icon: '📊' }
 ]
 
-// Форма
 const formData = ref({
   title: '',
   description: '',
@@ -24,92 +28,98 @@ const formData = ref({
 })
 
 const isLoading = ref(false)
+const isFetching = ref(false)
 const error = ref('')
 
-// Создание привычки
+const pageTitle = computed(() => isEditMode.value ? 'Редактировать привычку' : 'Новая привычка')
+const submitLabel = computed(() => isEditMode.value ? 'Сохранить' : 'Создать привычку')
+const backFallback = computed(() => isEditMode.value ? `/habits/${habitId.value}` : '/')
+
+const loadForEdit = async () => {
+  isFetching.value = true
+  try {
+    const habit = await habitsStore.fetchHabitById(habitId.value)
+    formData.value = {
+      title: habit.title,
+      description: habit.description || '',
+      habit_type: habit.habit_type,
+      is_private: habit.is_private
+    }
+  } catch (err) {
+    error.value = 'Не удалось загрузить привычку'
+    console.error(err)
+  } finally {
+    isFetching.value = false
+  }
+}
+
 const handleSubmit = async () => {
-  // Валидация
   if (!formData.value.title.trim()) {
     error.value = 'Название обязательно'
     return
   }
-  
+
   isLoading.value = true
   error.value = ''
-  
+
   try {
-    await habitsStore.createHabit(formData.value)
-    router.push('/') // назад на главную
+    if (isEditMode.value) {
+      await habitsStore.updateHabit(habitId.value, formData.value)
+      router.push(`/habits/${habitId.value}`)
+    } else {
+      await habitsStore.createHabit(formData.value)
+      router.push('/')
+    }
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Ошибка при создании привычки'
+    error.value = err.response?.data?.detail || 'Ошибка при сохранении привычки'
     console.error(err)
   } finally {
     isLoading.value = false
   }
 }
 
-// Отмена
-const handleCancel = () => {
-  router.push('/')
-}
+onMounted(() => {
+  if (isEditMode.value) loadForEdit()
+})
 </script>
 
 <template>
-  <div class="create-habit-screen">
-    <div class="create-container">
-      <!-- Хедер -->
-      <div class="header">
-        <button @click="handleCancel" class="close-btn" title="Закрыть">
-          <span class="close-icon">✕</span>
-        </button>
-        <h1 class="page-title">Новая привычка</h1>
-        <div class="placeholder"></div>
-      </div>
+  <div class="screen">
+    <AppHeader :title="pageTitle" :fallback="backFallback" />
 
-      <!-- Форма -->
-      <form @submit.prevent="handleSubmit" class="habit-form">
-        <!-- Название -->
+    <div class="screen-body">
+      <div v-if="isFetching" class="loading-state">Загрузка...</div>
+
+      <form v-else @submit.prevent="handleSubmit" class="habit-form">
         <div class="input-group">
-          <label class="input-label">
-            <span class="label-icon">📝</span>
-            Название
-          </label>
-          <input 
+          <label class="input-label">Название</label>
+          <input
             v-model="formData.title"
             type="text"
             placeholder="Например: Утренняя пробежка"
             maxlength="100"
             required
             :disabled="isLoading"
-            class="glass-input"
+            class="text-input"
           >
-          <span class="char-counter">{{ formData.title.length }}/100</span>
         </div>
 
-        <!-- Описание -->
         <div class="input-group">
           <label class="input-label">
-            <span class="label-icon">📋</span>
-            Описание
-            <span class="optional">(необязательно)</span>
+            Описание <span class="optional">(необязательно)</span>
           </label>
-          <textarea 
+          <textarea
             v-model="formData.description"
             placeholder="Опиши свою привычку подробнее..."
             rows="3"
             maxlength="300"
             :disabled="isLoading"
-            class="glass-textarea"
+            class="text-input"
           ></textarea>
-          <span class="char-counter">{{ formData.description?.length || 0 }}/300</span>
         </div>
 
-        <!-- Тип привычки -->
         <div class="input-group">
-          <label class="input-label">
-            <span class="label-icon">🔄</span>
-            Периодичность
-          </label>
+          <label class="input-label">Периодичность</label>
           <div class="type-grid">
             <button
               v-for="type in habitTypes"
@@ -126,15 +136,9 @@ const handleCancel = () => {
           </div>
         </div>
 
-        <!-- Приватность -->
         <div class="privacy-group">
           <label class="privacy-option">
-            <input 
-              type="radio" 
-              v-model="formData.is_private" 
-              :value="true"
-              :disabled="isLoading"
-            >
+            <input type="radio" v-model="formData.is_private" :value="true" :disabled="isLoading">
             <span class="privacy-content">
               <span class="privacy-icon">🔒</span>
               <span class="privacy-text">
@@ -145,12 +149,7 @@ const handleCancel = () => {
           </label>
 
           <label class="privacy-option">
-            <input 
-              type="radio" 
-              v-model="formData.is_private" 
-              :value="false"
-              :disabled="isLoading"
-            >
+            <input type="radio" v-model="formData.is_private" :value="false" :disabled="isLoading">
             <span class="privacy-content">
               <span class="privacy-icon">🌍</span>
               <span class="privacy-text">
@@ -161,207 +160,100 @@ const handleCancel = () => {
           </label>
         </div>
 
-        <!-- Ошибка -->
-        <p v-if="error" class="error-message">
-          <span class="error-icon">⚠️</span>
-          {{ error }}
-        </p>
+        <p v-if="error" class="error-message">{{ error }}</p>
 
-        <!-- Кнопки -->
-        <div class="form-actions">
-          <button 
-            type="button" 
-            class="cancel-btn"
-            @click="handleCancel"
-            :disabled="isLoading"
-          >
-            Отмена
-          </button>
-          <button 
-            type="submit" 
-            class="submit-btn"
-            :disabled="isLoading"
-          >
-            <span v-if="!isLoading">Создать привычку</span>
-            <span v-else class="button-loader"></span>
-          </button>
-        </div>
+        <PillButton type="submit" :loading="isLoading">{{ submitLabel }}</PillButton>
       </form>
     </div>
   </div>
 </template>
 
 <style scoped>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+.screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.create-habit-screen {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
+.screen-body {
+  flex: 1;
   overflow-y: auto;
-}
-
-.create-container {
-  width: 100%;
+  padding: var(--space-4);
   max-width: 500px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  animation: slideUp 0.5s ease;
+  width: 100%;
+  margin: 0 auto;
 }
 
-/* Хедер */
-.header {
-  padding: 20px 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.close-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
-  font-size: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.close-btn:active {
-  transform: scale(0.95);
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.placeholder {
-  width: 40px;
-}
-
-/* Форма */
-.habit-form {
-  padding: 24px;
+.loading-state {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-tertiary);
 }
 
 .input-group {
-  margin-bottom: 24px;
-  position: relative;
+  margin-bottom: var(--space-5);
 }
 
 .input-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: white;
+  display: block;
   font-size: 14px;
   font-weight: 500;
-  margin-bottom: 8px;
-  opacity: 0.9;
-}
-
-.label-icon {
-  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
 }
 
 .optional {
-  font-size: 12px;
   font-weight: 400;
-  opacity: 0.6;
-  margin-left: 4px;
+  opacity: 0.7;
 }
 
-.glass-input,
-.glass-textarea {
+.text-input {
   width: 100%;
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
+  padding: var(--space-4);
+  background: var(--surface-card);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
   font-size: 16px;
-  color: white;
-  transition: all 0.3s;
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: border-color 0.2s;
 }
 
-.glass-textarea {
+.text-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+textarea.text-input {
   resize: vertical;
   min-height: 80px;
 }
 
-.glass-input:focus,
-.glass-textarea:focus {
-  outline: none;
-  border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.glass-input::placeholder,
-.glass-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.char-counter {
-  position: absolute;
-  bottom: -18px;
-  right: 0;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-/* Типы привычек */
 .type-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .type-option {
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  color: white;
+  padding: var(--space-3);
+  background: var(--surface-card);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   cursor: pointer;
-  transition: all 0.3s;
 }
 
 .type-option.active {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: white;
-  transform: scale(1.02);
-}
-
-.type-option:active {
-  transform: scale(0.98);
+  border-color: var(--color-accent);
+  background: rgba(139, 92, 246, 0.1);
 }
 
 .type-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .type-label {
@@ -369,11 +261,10 @@ const handleCancel = () => {
   font-weight: 500;
 }
 
-/* Приватность */
 .privacy-group {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-5);
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .privacy-option {
@@ -388,27 +279,26 @@ const handleCancel = () => {
 .privacy-content {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  transition: all 0.3s;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-card);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
 }
 
 .privacy-option input[type="radio"]:checked + .privacy-content {
-  background: rgba(255, 255, 255, 0.25);
-  border-color: white;
+  border-color: var(--color-accent);
+  background: rgba(139, 92, 246, 0.1);
 }
 
 .privacy-icon {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .privacy-text {
   display: flex;
   flex-direction: column;
-  color: white;
+  color: var(--text-primary);
 }
 
 .privacy-text strong {
@@ -417,99 +307,21 @@ const handleCancel = () => {
 
 .privacy-hint {
   font-size: 11px;
-  opacity: 0.6;
+  color: var(--text-tertiary);
 }
 
-/* Ошибка */
 .error-message {
-  background: rgba(255, 59, 48, 0.2);
-  border: 1px solid rgba(255, 59, 48, 0.3);
-  border-radius: 16px;
-  padding: 12px 16px;
-  margin-bottom: 20px;
-  color: white;
+  background: rgba(255, 59, 48, 0.1);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  color: var(--color-danger);
   font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
-/* Кнопки */
-.form-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.cancel-btn,
-.submit-btn {
-  flex: 1;
-  padding: 16px;
-  border-radius: 24px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  border: none;
-}
-
-.cancel-btn {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.submit-btn {
-  background: white;
-  color: #764ba2;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-}
-
-.cancel-btn:active,
-.submit-btn:active {
-  transform: scale(0.98);
-}
-
-.cancel-btn:disabled,
-.submit-btn:disabled {
-  opacity: 0.7;
-  transform: none;
-}
-
-.button-loader {
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(139, 92, 246, 0.3);
-  border-radius: 50%;
-  border-top-color: #764ba2;
-  animation: spin 1s linear infinite;
-}
-
-/* Анимации */
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Адаптивность */
-@media (max-width: 480px) {
+@media (max-width: 380px) {
   .type-grid {
     grid-template-columns: 1fr;
   }
-  
-  .privacy-group {
-    flex-direction: column;
-  }
 }
-
 </style>

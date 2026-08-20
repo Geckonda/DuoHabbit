@@ -6,7 +6,7 @@ const routes = [
     path: '/',
     name: 'home',
     component: () => import('../views/HomeView.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, tabBar: true }
   },
   {
     path: '/login',
@@ -48,6 +48,30 @@ const routes = [
     path: '/habits/:id/edit',
     name: 'habit-edit',
     component: () => import('../views/HabitCreateView.vue'), // переиспользуем форму
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/groups',
+    name: 'groups-list',
+    component: () => import('../views/GroupsListView.vue'),
+    meta: { requiresAuth: true, tabBar: true }
+  },
+  {
+    path: '/groups/new',
+    name: 'group-create',
+    component: () => import('../views/GroupCreateView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/groups/join',
+    name: 'group-join',
+    component: () => import('../views/GroupJoinView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/groups/:id',
+    name: 'group-detail',
+    component: () => import('../views/GroupDetailView.vue'),
     meta: { requiresAuth: true }
   }
 ]
