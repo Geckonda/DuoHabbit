@@ -44,7 +44,7 @@ def habit_model_to_schema(habit_model: Habit, checks: list[HabitCheck] | None = 
 
 def habit_check_model_to_schema(habit_check_model: HabitCheck) -> HabitCheckRead:
     return HabitCheckRead(
-        habit_id=habit_check_model.id,
+        habit_id=habit_check_model.habit_id,
         check_date=habit_check_model.check_date,
         id=habit_check_model.id,
         created_at=habit_check_model.created_at
@@ -247,6 +247,9 @@ async def delete_check(
     # Пересчитываем стрик
     new_streak = await _calculate_streak(repo, check.habit_id)
     await repo.update(habit, current_streak=new_streak)
+
+    # Без коммита сессия закроется откатом, и удаление не доедет до базы
+    await repo.commit()
 
 
 # ========== STREAK LOGIC ==========

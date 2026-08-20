@@ -33,6 +33,18 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/chats',
+    name: 'chats',
+    component: () => import('../views/ChatsListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/chats/:id',
+    name: 'chat',
+    component: () => import('../views/ChatView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/habits/:id/edit',
     name: 'habit-edit',
     component: () => import('../views/HabitCreateView.vue'), // переиспользуем форму

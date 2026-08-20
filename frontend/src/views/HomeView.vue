@@ -2,10 +2,12 @@
 import { onMounted, computed } from 'vue'
 import { useUserStore } from '../stores/user'
 import { useHabitsStore } from '../stores/habit'
+import { useChatStore } from '../stores/chat'
 import { useRouter } from 'vue-router'
 
 const userStore = useUserStore()
 const habitsStore = useHabitsStore()
+const chatStore = useChatStore()
 const router = useRouter()
 
 const habits = computed(() => habitsStore.activeHabits)
@@ -22,14 +24,24 @@ const handleAddHabit = () => {
   router.push('/habits/new')
 }
 
+const handleOpenChats = () => {
+  router.push('/chats')
+}
+
 const handleLogout = async () => {
   await userStore.logout()
   habitsStore.$reset()
+  chatStore.$reset()
   router.push('/login')
 }
 
 onMounted(() => {
   loadHabits()
+
+  // Диалоги нужны здесь только ради счетчика непрочитанных,
+  // сокет держит его свежим без перезагрузки страницы
+  chatStore.fetchConversations().catch(() => {})
+  chatStore.connectSocket()
 })
 </script>
 
@@ -38,6 +50,12 @@ onMounted(() => {
     <div class="header">
       <h1>Мои привычки</h1>
       <div class="actions">
+        <button @click="handleOpenChats" class="chats">
+          💬
+          <span v-if="chatStore.unreadTotal > 0" class="badge">
+            {{ chatStore.unreadTotal }}
+          </span>
+        </button>
         <button @click="handleAddHabit" class="add">+</button>
         <button @click="handleLogout" class="logout">Выйти</button>
       </div>
@@ -105,6 +123,35 @@ onMounted(() => {
 .actions {
   display: flex;
   gap: 8px;
+}
+
+.chats {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  background: #fff;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.chats .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #FF3B30;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .add {
