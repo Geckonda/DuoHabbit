@@ -90,7 +90,16 @@ async def test_join_group_endpoint_happy_path(
     join_resp = await client.post("/groups/join", json={"invite_code": invite_code})
 
     assert join_resp.status_code == 200
-    assert join_resp.json()["member_count"] == 2
+    assert join_resp.json()["status"] == "pending"
+
+    as_user(app, owner.id)
+    group_id = create_resp.json()["id"]
+    approve_resp = await client.post(f"/groups/{group_id}/requests/{joiner.id}/approve")
+    assert approve_resp.status_code == 200
+    assert approve_resp.json()["status"] == "accepted"
+
+    group_resp = await client.get(f"/groups/{group_id}")
+    assert group_resp.json()["member_count"] == 2
 
 
 @pytest.mark.asyncio(loop_scope="session")

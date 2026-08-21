@@ -19,6 +19,8 @@ from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.groups import (
     GroupCreate,
     GroupInviteJoin,
+    GroupInviteRead,
+    GroupJoinRequestRead,
     GroupMemberAdd,
     GroupMemberRead,
     GroupMemberWithUser,
@@ -27,6 +29,7 @@ from duohabit.schemas.groups import (
     GroupUpdate,
     GroupWithHabits,
     JoinMethod,
+    MemberStatus,
 )
 from duohabit.schemas.habits import HabitCreate, HabitRead
 from duohabit.services.habits import reconcile_all_members, habit_model_to_schema
@@ -61,6 +64,7 @@ def group_member_model_to_schema(member: GroupMember) -> GroupMemberRead:
         user_id=member.user_id,
         role=GroupRole(member.role),
         join_method=JoinMethod(member.join_method),
+        status=MemberStatus(member.status),
         is_active=member.is_active,
         created_at=member.created_at,
     )
@@ -76,6 +80,7 @@ def group_member_with_user_model_to_schema(
         user_id=member.user_id,
         role=GroupRole(member.role),
         join_method=JoinMethod(member.join_method),
+        status=MemberStatus(member.status),
         is_active=member.is_active,
         created_at=member.created_at,
         username=username,
@@ -292,48 +297,58 @@ async def regenerate_invite_code(
 # ========== MEMBERSHIP ==========
 
 
+def _require_not_already_pending_or_member(existing_member: GroupMember | None) -> None:
+    """Shared guard for both invite/request creation paths."""
+    if existing_member is None:
+        return
+    if existing_member.is_active:
+        raise ConflictError("Already a member of this group")
+    if existing_member.status == MemberStatus.PENDING.value:
+        raise ConflictError("Membership is already pending")
+
+
 async def join_group_by_code(
     repo: GroupRepository,
-    habit_repo: HabitRepository,
-    users_repo: UsersRepository,
     user_id: int,
     invite_join: GroupInviteJoin,
-) -> GroupWithHabits:
-    """Join a group using its invite code."""
+) -> GroupMemberRead:
+    """
+    Request to join a group using its invite code.
+
+    Does not grant membership - the owner has to approve first (see approve_request).
+    """
     group = await repo.get_group_by_invite_code(invite_join.invite_code)
     if not group or not group.is_active:
         raise NotFoundError("Invalid invite code")
 
     existing_member = await repo.get_member(group.id, user_id)
-    if existing_member and existing_member.is_active:
-        raise ConflictError("Already a member of this group")
+    _require_not_already_pending_or_member(existing_member)
 
     active_count = await repo.count_active_members(group.id)
     if active_count >= MAX_MEMBERS:
         raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
 
     if existing_member:
-        await repo.reactivate_member(existing_member, JoinMethod.INVITE_CODE.value)
+        member = await repo.reset_to_pending(existing_member, JoinMethod.INVITE_CODE.value)
     else:
-        await repo.add_member(
+        member = await repo.create_pending_member(
             group.id, user_id, GroupRole.MEMBER.value, JoinMethod.INVITE_CODE.value
         )
-    await _sync_join(habit_repo, users_repo, group.id, user_id)
     await repo.commit()
-    await habit_repo.commit()
-
-    return await get_group(repo, habit_repo, users_repo, group.id, user_id)
+    return group_member_model_to_schema(member)
 
 
 async def add_member(
     repo: GroupRepository,
-    habit_repo: HabitRepository,
-    users_repo: UsersRepository,
     group_id: int,
     owner_user_id: int,
     member_data: GroupMemberAdd,
 ) -> GroupMemberRead:
-    """Directly add a member to a group (owner only)."""
+    """
+    Invite a user to a group directly by id (owner only).
+
+    Does not grant membership - the invitee has to accept first (see accept_invite).
+    """
     await _require_owner(repo, group_id, owner_user_id)
 
     active_count = await repo.count_active_members(group_id)
@@ -341,24 +356,133 @@ async def add_member(
         raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
 
     existing_member = await repo.get_member(group_id, member_data.user_id)
-    if existing_member and existing_member.is_active:
-        raise ConflictError("User is already a member of this group")
+    _require_not_already_pending_or_member(existing_member)
 
     if existing_member:
-        member = await repo.reactivate_member(
-            existing_member, JoinMethod.ADDED_BY_OWNER.value
-        )
+        member = await repo.reset_to_pending(existing_member, JoinMethod.ADDED_BY_OWNER.value)
     else:
-        member = await repo.add_member(
+        member = await repo.create_pending_member(
             group_id,
             member_data.user_id,
             GroupRole.MEMBER.value,
             JoinMethod.ADDED_BY_OWNER.value,
         )
-    await _sync_join(habit_repo, users_repo, group_id, member_data.user_id)
+    await repo.commit()
+    return group_member_model_to_schema(member)
+
+
+async def _get_pending_member_or_404(
+    repo: GroupRepository, group_id: int, user_id: int, join_method: JoinMethod
+) -> GroupMember:
+    member = await repo.get_member(group_id, user_id)
+    if (
+        member is None
+        or member.status != MemberStatus.PENDING.value
+        or member.join_method != join_method.value
+    ):
+        raise NotFoundError("No pending membership found")
+    return member
+
+
+async def accept_invite(
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    user_id: int,
+) -> GroupWithHabits:
+    """Accept an owner-sent invite - grants membership and enrolls in current habits."""
+    member = await _get_pending_member_or_404(
+        repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER
+    )
+
+    active_count = await repo.count_active_members(group_id)
+    if active_count >= MAX_MEMBERS:
+        raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
+
+    await repo.accept_member(member)
+    await _sync_join(habit_repo, users_repo, group_id, user_id)
     await repo.commit()
     await habit_repo.commit()
-    return group_member_model_to_schema(member)
+    return await get_group(repo, habit_repo, users_repo, group_id, user_id)
+
+
+async def decline_invite(repo: GroupRepository, group_id: int, user_id: int) -> None:
+    """Decline an owner-sent invite."""
+    member = await _get_pending_member_or_404(
+        repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER
+    )
+    await repo.delete_member(member)
+    await repo.commit()
+
+
+async def approve_request(
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    owner_user_id: int,
+    requester_id: int,
+) -> GroupMemberRead:
+    """Approve a join-by-code request (owner only) - grants membership."""
+    await _require_owner(repo, group_id, owner_user_id)
+    member = await _get_pending_member_or_404(
+        repo, group_id, requester_id, JoinMethod.INVITE_CODE
+    )
+
+    active_count = await repo.count_active_members(group_id)
+    if active_count >= MAX_MEMBERS:
+        raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
+
+    accepted = await repo.accept_member(member)
+    await _sync_join(habit_repo, users_repo, group_id, requester_id)
+    await repo.commit()
+    await habit_repo.commit()
+    return group_member_model_to_schema(accepted)
+
+
+async def reject_request(
+    repo: GroupRepository, group_id: int, owner_user_id: int, requester_id: int
+) -> None:
+    """Reject a join-by-code request (owner only)."""
+    await _require_owner(repo, group_id, owner_user_id)
+    member = await _get_pending_member_or_404(
+        repo, group_id, requester_id, JoinMethod.INVITE_CODE
+    )
+    await repo.delete_member(member)
+    await repo.commit()
+
+
+async def list_my_invites(repo: GroupRepository, user_id: int) -> list[GroupInviteRead]:
+    """List owner-sent invites the user hasn't responded to yet."""
+    rows = await repo.get_pending_invites_for_user(user_id)
+    return [
+        GroupInviteRead(
+            id=member.id,
+            group_id=group.id,
+            group_name=group.name,
+            created_at=member.created_at,
+        )
+        for member, group in rows
+    ]
+
+
+async def list_my_join_requests(
+    repo: GroupRepository, user_id: int
+) -> list[GroupJoinRequestRead]:
+    """List pending join-by-code requests waiting on groups the user owns."""
+    rows = await repo.get_pending_requests_for_owner(user_id)
+    return [
+        GroupJoinRequestRead(
+            id=member.id,
+            group_id=group.id,
+            group_name=group.name,
+            user_id=member.user_id,
+            username=username,
+            created_at=member.created_at,
+        )
+        for member, group, username in rows
+    ]
 
 
 async def remove_member(

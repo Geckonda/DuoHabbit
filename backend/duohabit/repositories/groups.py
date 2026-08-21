@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from duohabit.models.groups import Group, GroupMember
+from duohabit.models.groups import Group, GroupMember, JoinMethod, MemberStatus
 from duohabit.models.users import User
 from duohabit.schemas.common import PaginationParams
 from duohabit.utils.pagination import apply_pagination
@@ -118,6 +118,84 @@ class GroupRepository:
             raise ValueError("User is already a member of this group") from exc
         await self._session.refresh(member)
         return member
+
+    async def create_pending_member(
+        self, group_id: int, user_id: int, role: str, join_method: str
+    ) -> GroupMember:
+        """Create a membership row awaiting the other side's response (invite or request)."""
+        member = GroupMember(
+            group_id=group_id,
+            user_id=user_id,
+            role=role,
+            join_method=join_method,
+            status=MemberStatus.PENDING.value,
+            is_active=False,
+        )
+        self._session.add(member)
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise ValueError("A membership row for this user already exists") from exc
+        await self._session.refresh(member)
+        return member
+
+    async def reset_to_pending(self, member: GroupMember, join_method: str) -> GroupMember:
+        """Put a previously-removed membership row back into pending (rejoin needs approval too)."""
+        member.status = MemberStatus.PENDING.value
+        member.is_active = False
+        member.join_method = join_method
+        member.removed_at = None
+        await self._session.flush()
+        await self._session.refresh(member)
+        return member
+
+    async def accept_member(self, member: GroupMember) -> GroupMember:
+        """Turn a pending invite/request into real, active membership."""
+        member.status = MemberStatus.ACCEPTED.value
+        member.is_active = True
+        await self._session.flush()
+        await self._session.refresh(member)
+        return member
+
+    async def delete_member(self, member: GroupMember) -> None:
+        """Hard-delete a membership row (declined invite / rejected request - never was a member)."""
+        await self._session.delete(member)
+        await self._session.flush()
+
+    async def get_pending_invites_for_user(
+        self, user_id: int
+    ) -> list[tuple[GroupMember, Group]]:
+        """Pending owner-sent invites the user hasn't responded to yet."""
+        stmt = (
+            select(GroupMember, Group)
+            .join(Group, Group.id == GroupMember.group_id)
+            .where(
+                GroupMember.user_id == user_id,
+                GroupMember.status == MemberStatus.PENDING.value,
+                GroupMember.join_method == JoinMethod.ADDED_BY_OWNER.value,
+            )
+            .order_by(GroupMember.id)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.tuples().all())
+
+    async def get_pending_requests_for_owner(
+        self, owner_id: int
+    ) -> list[tuple[GroupMember, Group, str]]:
+        """Pending join-by-code requests waiting on groups the user owns."""
+        stmt = (
+            select(GroupMember, Group, User.username)
+            .join(Group, Group.id == GroupMember.group_id)
+            .join(User, User.id == GroupMember.user_id)
+            .where(
+                Group.owner_id == owner_id,
+                GroupMember.status == MemberStatus.PENDING.value,
+                GroupMember.join_method == JoinMethod.INVITE_CODE.value,
+            )
+            .order_by(GroupMember.id)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.tuples().all())
 
     async def get_member(self, group_id: int, user_id: int) -> GroupMember | None:
         """Get a (possibly inactive) membership row for a user in a group."""

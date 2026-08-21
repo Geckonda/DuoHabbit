@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from duohabit.auth import get_user_db, get_user_manager
 from duohabit.config import settings
@@ -28,6 +29,16 @@ async def init_db() -> None:
         return
     async with engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all only adds missing tables, never columns on existing ones - there's no
+        # Alembic here, so additive column changes on already-live tables go through a plain,
+        # idempotent ALTER instead. Existing rows default to 'accepted': they're already real
+        # members, nothing about them should suddenly look pending.
+        await conn.execute(
+            text(
+                "ALTER TABLE group_member ADD COLUMN IF NOT EXISTS "
+                "status VARCHAR(20) NOT NULL DEFAULT 'accepted'"
+            )
+        )
     session = session_fact()()
     users_repo = UsersRepository(session)
     user_db = await anext(get_user_db(session))

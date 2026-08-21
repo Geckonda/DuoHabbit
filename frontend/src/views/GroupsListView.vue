@@ -12,7 +12,9 @@ const groupsList = computed(() => groupsStore.groupsList)
 
 const loadGroups = async () => {
   try {
-    await groupsStore.fetchGroups(true)
+    // force=true: 5-минутный кэш иначе прячет свежее членство (тебя одобрили,
+    // а список групп ещё "помнит" старое состояние) при каждом заходе на вкладку
+    await groupsStore.fetchGroups(true, true)
   } catch (err) {
     console.error('Ошибка загрузки групп:', err)
   }
@@ -26,8 +28,14 @@ const handleJoinGroup = () => {
   router.push('/groups/join')
 }
 
+const handleOpenInvites = () => {
+  router.push('/groups/invites')
+}
+
 onMounted(() => {
   loadGroups()
+  groupsStore.fetchMyInvites().catch(() => {})
+  groupsStore.fetchMyRequests().catch(() => {})
 })
 </script>
 
@@ -35,6 +43,12 @@ onMounted(() => {
   <div class="screen">
     <AppHeader title="Мои группы" :show-back="false">
       <template #right>
+        <button @click="handleOpenInvites" class="invites" title="Приглашения">
+          🔔
+          <span v-if="groupsStore.pendingCount > 0" class="invites-badge">
+            {{ groupsStore.pendingCount > 9 ? '9+' : groupsStore.pendingCount }}
+          </span>
+        </button>
         <button @click="handleJoinGroup" class="join" title="Присоединиться по коду">🔗</button>
         <button @click="handleCreateGroup" class="add">+</button>
       </template>
@@ -94,6 +108,7 @@ onMounted(() => {
   padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + var(--space-4));
 }
 
+.invites,
 .join,
 .add {
   width: 36px;
@@ -104,6 +119,27 @@ onMounted(() => {
   color: var(--color-ios-blue);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
+}
+
+.invites {
+  position: relative;
+  font-size: 16px;
+}
+
+.invites-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: var(--text-on-accent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
 }
 
 .join {

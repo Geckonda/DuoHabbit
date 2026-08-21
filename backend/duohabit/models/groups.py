@@ -34,6 +34,13 @@ class JoinMethod(str, Enum):
     ADDED_BY_OWNER = "added_by_owner"
 
 
+class MemberStatus(str, Enum):
+    """Whether a membership row is waiting on someone's response or is real membership."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+
+
 class Group(TimestampMixin, Base):
     """A cooperative group of up to 5 users sharing any number of habits."""
 
@@ -69,6 +76,12 @@ class GroupMember(TimestampMixin, Base):
         String(20), default=GroupRole.MEMBER.value, nullable=False
     )
     join_method: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Кто должен согласиться, зависит от join_method: ADDED_BY_OWNER -> сам user_id,
+    # INVITE_CODE -> владелец группы. Пока pending, is_active=False - невидимо
+    # во всех существующих выборках без единой правки на их стороне
+    status: Mapped[str] = mapped_column(
+        String(20), default=MemberStatus.ACCEPTED.value, nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

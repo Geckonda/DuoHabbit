@@ -26,15 +26,35 @@ export const groups = {
   regenerateInvite: (groupId) =>
     api.post(`/groups/${groupId}/invite/regenerate`),
 
-  // Вступить по инвайт-коду (сразу подключает ко всем текущим привычкам группы)
+  // Подать заявку на вступление по инвайт-коду - членство только после одобрения владельцем
   join: (inviteCode) =>
     api.post('/groups/join', { invite_code: inviteCode }),
+
+  // Мои входящие инвайты (owner пригласил, жду ответа)
+  getMyInvites: () =>
+    api.get('/groups/invites'),
+
+  // Заявки на вступление в группы, которыми я владею
+  getMyRequests: () =>
+    api.get('/groups/requests'),
+
+  acceptInvite: (groupId) =>
+    api.post(`/groups/${groupId}/invites/accept`),
+
+  declineInvite: (groupId) =>
+    api.post(`/groups/${groupId}/invites/decline`),
+
+  approveRequest: (groupId, userId) =>
+    api.post(`/groups/${groupId}/requests/${userId}/approve`),
+
+  rejectRequest: (groupId, userId) =>
+    api.post(`/groups/${groupId}/requests/${userId}/reject`),
 
   // Список участников (с юзернеймами)
   getMembers: (groupId) =>
     api.get(`/groups/${groupId}/members`),
 
-  // Добавить участника напрямую (только владелец)
+  // Пригласить юзера напрямую (только владелец) - членство только после его accept
   addMember: (groupId, userId) =>
     api.post(`/groups/${groupId}/members`, { user_id: userId }),
 
