@@ -65,6 +65,14 @@ def _send(subscription: PushSubscription, payload: NotificationPayload) -> bool:
             return False
         logger.warning("Push delivery failed for subscription %s: %s", subscription.id, error)
         return True
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        # Runs after the caller's own work (message already sent, invite already
+        # created) is committed - a network blip or a corrupted stored key here
+        # must not turn an already-successful action into a client-visible error
+        logger.warning(
+            "Unexpected error sending push to subscription %s: %s", subscription.id, error
+        )
+        return True
 
 
 async def notify(

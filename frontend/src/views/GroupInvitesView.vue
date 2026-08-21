@@ -26,51 +26,41 @@ const load = async () => {
   }
 }
 
-const handleAccept = async (invite) => {
-  respondingId.value = invite.id
+// Общая форма всех четырех действий: занять respondingId, дернуть store-экшен,
+// при успехе опционально уйти в группу, при ошибке показать конкретный текст
+const respond = async (item, { action, errorMessage, navigate = false }) => {
+  respondingId.value = item.id
   try {
-    await groupsStore.acceptInvite(invite.group_id)
-    router.push(`/groups/${invite.group_id}`)
+    await action()
+    if (navigate) router.push(`/groups/${item.group_id}`)
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Не удалось принять приглашение'
+    error.value = err.response?.data?.detail || errorMessage
   } finally {
     respondingId.value = null
   }
 }
 
-const handleDecline = async (invite) => {
-  respondingId.value = invite.id
-  try {
-    await groupsStore.declineInvite(invite.group_id)
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Не удалось отклонить приглашение'
-  } finally {
-    respondingId.value = null
-  }
-}
+const handleAccept = (invite) => respond(invite, {
+  action: () => groupsStore.acceptInvite(invite.group_id),
+  errorMessage: 'Не удалось принять приглашение',
+  navigate: true,
+})
 
-const handleApprove = async (request) => {
-  respondingId.value = request.id
-  try {
-    await groupsStore.approveRequest(request.group_id, request.user_id)
-    router.push(`/groups/${request.group_id}`)
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Не удалось одобрить заявку'
-  } finally {
-    respondingId.value = null
-  }
-}
+const handleDecline = (invite) => respond(invite, {
+  action: () => groupsStore.declineInvite(invite.group_id),
+  errorMessage: 'Не удалось отклонить приглашение',
+})
 
-const handleReject = async (request) => {
-  respondingId.value = request.id
-  try {
-    await groupsStore.rejectRequest(request.group_id, request.user_id)
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Не удалось отклонить заявку'
-  } finally {
-    respondingId.value = null
-  }
-}
+const handleApprove = (request) => respond(request, {
+  action: () => groupsStore.approveRequest(request.group_id, request.user_id),
+  errorMessage: 'Не удалось одобрить заявку',
+  navigate: true,
+})
+
+const handleReject = (request) => respond(request, {
+  action: () => groupsStore.rejectRequest(request.group_id, request.user_id),
+  errorMessage: 'Не удалось отклонить заявку',
+})
 
 onMounted(load)
 </script>

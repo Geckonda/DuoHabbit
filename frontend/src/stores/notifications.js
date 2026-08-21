@@ -61,12 +61,20 @@ export const useNotificationsStore = defineStore('notifications', () => {
     error.value = null
 
     try {
+      // Проверяем ДО requestPermission: если сервер не настроен, спрашивать
+      // разрешение у юзера незачем - а провалившись после granted, банер
+      // сам больше никогда не покажется (permission уже не 'default')
+      const { data } = await notifications.getVapidPublicKey()
+      if (!data.public_key) {
+        error.value = 'Push пока не настроен на сервере'
+        return
+      }
+
       const result = await Notification.requestPermission()
       permission.value = result
       if (result !== 'granted') return
 
       const registration = await registerServiceWorker()
-      const { data } = await notifications.getVapidPublicKey()
 
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,

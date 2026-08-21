@@ -197,6 +197,22 @@ export const useChatStore = defineStore('chat', () => {
         markRead(message.conversation_id).catch(() => {})
       }
     }
+
+    // Собеседник принял/отклонил запрос с другой стороны - если тут открыта
+    // своя вкладка, статус иначе завис бы на "Ожидает ответа" до перезахода
+    if (payload.type === 'conversation_accepted') {
+      const index = conversations.value.findIndex((c) => c.id === payload.conversation.id)
+      if (index !== -1) {
+        conversations.value[index] = payload.conversation
+      } else {
+        conversations.value = [payload.conversation, ...conversations.value]
+      }
+    }
+
+    if (payload.type === 'conversation_declined') {
+      conversations.value = conversations.value.filter((c) => c.id !== payload.conversation_id)
+      delete messagesByConversation.value[payload.conversation_id]
+    }
   }
 
   // ===== Сокет =====
