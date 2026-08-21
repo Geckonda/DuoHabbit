@@ -7,10 +7,9 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: duohabit-postgres
+    env_file:
+      - ./backend/.env  # Те же POSTGRES_USER/PASSWORD/DB, что использует backend - один источник правды
     environment:
-      POSTGRES_DB: duohabit_db
-      POSTGRES_USER: duohabit_user
-      POSTGRES_PASSWORD: duohabit_password  # В продакшене использовать secrets!
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "127.0.0.1:5433:5432"  # Только localhost, снаружи не нужен
@@ -18,7 +17,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U duohabit_user -d duohhabitdb"]  # Вот так правильно!
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +28,7 @@ services:
   # Backend API
   backend:
     build: ./backend
-    container_name: backend
+    container_name: duohabit-backend
     restart: unless-stopped
     env_file:
       - ./backend/.env
