@@ -7,3 +7,4 @@ requests
 sqlalchemy
 asyncpg
 pydantic-settings
+pywebpush

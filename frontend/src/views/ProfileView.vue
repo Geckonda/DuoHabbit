@@ -6,6 +6,7 @@ import { useUserStore } from '../stores/user'
 import { useHabitsStore } from '../stores/habit'
 import { useGroupsStore } from '../stores/group'
 import { useChatStore } from '../stores/chat'
+import { useNotificationsStore } from '../stores/notifications'
 import AppHeader from '../components/AppHeader.vue'
 import GlassCard from '../components/GlassCard.vue'
 import PillButton from '../components/PillButton.vue'
@@ -15,6 +16,22 @@ const userStore = useUserStore()
 const habitsStore = useHabitsStore()
 const groupsStore = useGroupsStore()
 const chatStore = useChatStore()
+const notificationsStore = useNotificationsStore()
+
+const isTogglingPush = ref(false)
+
+const handleTogglePush = async () => {
+  isTogglingPush.value = true
+  try {
+    if (notificationsStore.isSubscribed) {
+      await notificationsStore.disable()
+    } else {
+      await notificationsStore.enable()
+    }
+  } finally {
+    isTogglingPush.value = false
+  }
+}
 
 const formData = ref({ username: '', timezone: '' })
 const isSaving = ref(false)
@@ -61,10 +78,14 @@ const handleLogout = async () => {
   habitsStore.$reset()
   groupsStore.$reset()
   chatStore.$reset()
+  notificationsStore.$reset()
   router.push('/login')
 }
 
-onMounted(syncForm)
+onMounted(() => {
+  syncForm()
+  notificationsStore.syncStatus()
+})
 </script>
 
 <template>
@@ -118,6 +139,29 @@ onMounted(syncForm)
         <p v-if="savedHint" class="saved-hint">✓ {{ savedHint }}</p>
 
         <PillButton :loading="isSaving" @click="handleSave">Сохранить</PillButton>
+      </GlassCard>
+
+      <GlassCard title="Уведомления" icon="🔔">
+        <p v-if="!notificationsStore.isSupported" class="hint-text">
+          Браузер не поддерживает push-уведомления
+        </p>
+        <template v-else>
+          <p class="hint-text push-status">
+            {{ notificationsStore.isSubscribed ? 'Уведомления о сообщениях включены' : 'Уведомления о сообщениях выключены' }}
+          </p>
+          <p v-if="notificationsStore.permission === 'denied'" class="hint-text">
+            Браузер заблокировал уведомления для этого сайта — разреши их в настройках браузера, чтобы включить
+          </p>
+          <p v-if="notificationsStore.error" class="error-message">{{ notificationsStore.error }}</p>
+          <PillButton
+            :variant="notificationsStore.isSubscribed ? 'secondary' : 'primary'"
+            :loading="isTogglingPush"
+            :disabled="notificationsStore.permission === 'denied'"
+            @click="handleTogglePush"
+          >
+            {{ notificationsStore.isSubscribed ? 'Выключить' : 'Включить' }}
+          </PillButton>
+        </template>
       </GlassCard>
 
       <PillButton variant="ghost" class="logout-btn" @click="handleLogout">
@@ -259,6 +303,10 @@ onMounted(syncForm)
   font-size: 13px;
   margin-bottom: var(--space-4);
   text-align: center;
+}
+
+.push-status {
+  margin-bottom: var(--space-3);
 }
 
 .logout-btn {

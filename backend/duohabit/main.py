@@ -15,6 +15,7 @@ from duohabit.repositories.users import UsersRepository
 from duohabit.routers.auth import auth_router
 from duohabit.routers.groups import groups_router
 from duohabit.routers.habits import habits_router
+from duohabit.routers.push import push_router
 from duohabit.routers.users import users_router
 from duohabit.schemas.users import UserCreate
 from duohabit.routers.chat import chat_router
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     res_app.include_router(habits_router)
     res_app.include_router(groups_router)
     res_app.include_router(chat_router)
+    res_app.include_router(push_router)
 
     @res_app.get("/")
     def root() -> dict[str, str]:
@@ -87,13 +89,10 @@ app = create_app()
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=[
-    #     "http://localhost:5177",
-    #     "http://localhost:5173",
-    #     # Сюда добавишь прод домены
-    #     "https://yourdomain.com",
-    # ],
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://duohabit.dotnetdon.ru",
+    ],
     allow_credentials=True,
     allow_methods=["*"],  # Разрешить все методы (GET, POST, PUT, DELETE...)
     allow_headers=["*"],  # Разрешить все заголовки
