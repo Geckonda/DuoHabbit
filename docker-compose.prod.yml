@@ -45,7 +45,7 @@ services:
     mem_limit: 200m
     cpus: "0.5"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8005/').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3

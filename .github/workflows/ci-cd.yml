@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   pull_request:
-    branches: [main]
+    branches: [develop]
 
 jobs:
   backend-test:
@@ -37,7 +37,7 @@ jobs:
 
   deploy:
     needs: [backend-test, frontend-build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Setup SSH
@@ -65,7 +65,7 @@ jobs:
         run: |
           ssh -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
             cd ${{ secrets.DEPLOY_PATH }} &&
-            git fetch origin main &&
-            git reset --hard origin/main &&
+            git fetch origin develop &&
+            git reset --hard origin/develop &&
             docker compose -f docker-compose.prod.yml up -d --build
           "
