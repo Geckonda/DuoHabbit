@@ -36,7 +36,7 @@ const routes = [
     path: '/chats',
     name: 'chats',
     component: () => import('../views/ChatsListView.vue'),
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, tabBar: true }
   },
   {
     path: '/chats/:id',

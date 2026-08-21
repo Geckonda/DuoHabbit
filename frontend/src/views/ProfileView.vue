@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useHabitsStore } from '../stores/habit'
 import { useGroupsStore } from '../stores/group'
+import { useChatStore } from '../stores/chat'
 import AppHeader from '../components/AppHeader.vue'
 import GlassCard from '../components/GlassCard.vue'
 import PillButton from '../components/PillButton.vue'
@@ -13,6 +14,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const habitsStore = useHabitsStore()
 const groupsStore = useGroupsStore()
+const chatStore = useChatStore()
 
 const formData = ref({ username: '', timezone: '' })
 const isSaving = ref(false)
@@ -58,6 +60,7 @@ const handleLogout = async () => {
   await userStore.logout()
   habitsStore.$reset()
   groupsStore.$reset()
+  chatStore.$reset()
   router.push('/login')
 }
 
