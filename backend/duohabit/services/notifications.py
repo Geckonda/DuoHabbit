@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from pywebpush import WebPushException, webpush
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from duohabit.chat_hub import hub
 from duohabit.config import settings
 from duohabit.logger import logger
 from duohabit.models.push import PushSubscription
@@ -86,3 +88,17 @@ async def notify(
         for subscription in dead:
             await repo.delete(subscription)
         await repo.commit()
+
+
+async def notify_if_offline(
+    session: AsyncSession, user_ids: list[int], payload: NotificationPayload
+) -> None:
+    """
+    Push only to recipients without a live socket.
+
+    Online ones already have (or will get) the news some other way - a WS
+    event, an in-app toast - a push on top would just be a duplicate.
+    """
+    offline = [user_id for user_id in user_ids if not hub.is_online(user_id)]
+    if offline:
+        await notify(PushRepository(session), offline, payload)

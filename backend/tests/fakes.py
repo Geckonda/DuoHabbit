@@ -71,11 +71,15 @@ class FakeChatRepository:
                 return conversation
         return None
 
-    async def create_conversation(self, user_ids: list[int]) -> Conversation:
-        """Create a conversation with the given participants."""
+    async def create_conversation(
+        self, user_ids: list[int], initiator_id: int
+    ) -> Conversation:
+        """Create a conversation with the given participants, starting out pending."""
         conversation = Conversation(
             id=self._next_conversation_id,
             last_message_at=None,
+            status="pending",
+            initiator_id=initiator_id,
             participants=[
                 ConversationParticipant(
                     id=self._next_conversation_id * 100 + index,
@@ -89,6 +93,18 @@ class FakeChatRepository:
         self.conversations[conversation.id] = conversation
         self._next_conversation_id += 1
         return conversation
+
+    async def accept_conversation(self, conversation: Conversation) -> Conversation:
+        """Accept a pending request."""
+        conversation.status = "accepted"
+        return conversation
+
+    async def delete_conversation(self, conversation: Conversation) -> None:
+        """Decline a pending request - the conversation and its messages are gone."""
+        self.conversations.pop(conversation.id, None)
+        self.messages = [
+            message for message in self.messages if message.conversation_id != conversation.id
+        ]
 
     async def list_conversations(
         self, user_id: int, pagination: PaginationParams | None = None

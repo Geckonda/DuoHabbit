@@ -31,6 +31,23 @@ export const useChatStore = defineStore('chat', () => {
   const findConversation = (conversationId) =>
     conversations.value.find((c) => c.id === conversationId)
 
+  // Запросы на переписку от других - я не открывал(а) диалог и еще не принял(а)
+  const pendingRequests = computed(() => {
+    const myId = useUserStore().user?.id
+    return conversations.value.filter(
+      (c) => c.status === 'pending' && c.initiator_id !== myId
+    )
+  })
+
+  // Обычный список: принятые диалоги + мои же исходящие запросы (ими можно
+  // пользоваться, просто собеседник еще не ответил)
+  const activeConversations = computed(() => {
+    const myId = useUserStore().user?.id
+    return conversations.value.filter(
+      (c) => c.status === 'accepted' || c.initiator_id === myId
+    )
+  })
+
   // ===== Загрузка =====
 
   const fetchConversations = async () => {
@@ -109,6 +126,19 @@ export const useChatStore = defineStore('chat', () => {
 
     const conversation = findConversation(conversationId)
     if (conversation) conversation.unread_count = 0
+  }
+
+  const acceptRequest = async (conversationId) => {
+    const response = await chat.acceptRequest(conversationId)
+    const index = conversations.value.findIndex((c) => c.id === conversationId)
+    if (index !== -1) conversations.value[index] = response.data
+    return response.data
+  }
+
+  const declineRequest = async (conversationId) => {
+    await chat.declineRequest(conversationId)
+    conversations.value = conversations.value.filter((c) => c.id !== conversationId)
+    delete messagesByConversation.value[conversationId]
   }
 
   // ===== Входящие события =====
@@ -211,12 +241,16 @@ export const useChatStore = defineStore('chat', () => {
     error,
     unreadTotal,
     activeMessages,
+    pendingRequests,
+    activeConversations,
     fetchConversations,
     fetchMessages,
     fetchOlderMessages,
     openConversation,
     sendMessage,
     markRead,
+    acceptRequest,
+    declineRequest,
     connectSocket,
     disconnectSocket,
     setActiveConversation,
