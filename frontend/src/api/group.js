@@ -2,15 +2,15 @@
 import api from './index'
 
 export const groups = {
-  // Получить мои группы
+  // Получить мои группы (каждая уже с habits[] и member_count)
   getAll: (onlyActive = true) =>
     api.get('/groups', { params: { only_active: onlyActive } }),
 
-  // Получить группу по ID (с привычкой и числом участников)
+  // Получить группу по ID (с привычками и числом участников)
   getById: (groupId) =>
     api.get(`/groups/${groupId}`),
 
-  // Создать группу вместе с общей привычкой
+  // Создать группу (только имя — привычки добавляются отдельно)
   create: (data) =>
     api.post('/groups', data),
 
@@ -26,7 +26,7 @@ export const groups = {
   regenerateInvite: (groupId) =>
     api.post(`/groups/${groupId}/invite/regenerate`),
 
-  // Вступить по инвайт-коду
+  // Вступить по инвайт-коду (сразу подключает ко всем текущим привычкам группы)
   join: (inviteCode) =>
     api.post('/groups/join', { invite_code: inviteCode }),
 
@@ -46,19 +46,11 @@ export const groups = {
   leave: (groupId) =>
     api.post(`/groups/${groupId}/leave`),
 
-  // Изменить название/описание/allowed_misses общей привычки
-  updateHabit: (groupId, data) =>
-    api.patch(`/groups/${groupId}/habit`, data),
+  // Список привычек группы
+  getHabits: (groupId) =>
+    api.get(`/groups/${groupId}/habits`),
 
-  // Отметить выполнение за текущий период
-  checkIn: (groupId) =>
-    api.post(`/groups/${groupId}/check`),
-
-  // Кто уже отметился за текущий период
-  getCheckinStatus: (groupId) =>
-    api.get(`/groups/${groupId}/checks/status`),
-
-  // Мои последние чеки
-  getMyChecks: (groupId, limit = 30) =>
-    api.get(`/groups/${groupId}/checks/mine`, { params: { limit } })
+  // Добавить новую общую привычку (только владелец) — подключает всех текущих участников
+  addHabit: (groupId, data) =>
+    api.post(`/groups/${groupId}/habits`, data)
 }

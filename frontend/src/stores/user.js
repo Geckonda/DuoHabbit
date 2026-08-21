@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { auth } from '../api/auth'
+import { users } from '../api/user'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref(null) // будет UserRead или null
@@ -82,6 +83,13 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  // Обновление своего профиля (username/timezone)
+  const updateProfile = async (data) => {
+    const response = await users.updateMe(data)
+    user.value = response.data
+    return user.value
+  }
+
   return {
     user,
     isAuthenticated,
@@ -89,6 +97,7 @@ export const useUserStore = defineStore('user', () => {
     checkAuth,
     login,
     register,
-    logout
+    logout,
+    updateProfile
   }
 })

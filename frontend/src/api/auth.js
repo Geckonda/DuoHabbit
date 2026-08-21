@@ -20,9 +20,12 @@ export const auth = {
       email: userData.email,
       username: userData.username,
       password: userData.password,
-      is_platform_admin: userData.is_platform_admin || false
+      is_platform_admin: userData.is_platform_admin || false,
+      // День привычки считается по этой таймзоне на беке — берём её у браузера,
+      // а не гадаем по IP. Если Intl недоступен (древний браузер) — бек сам возьмёт UTC.
+      timezone: userData.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
     })
-    
+
     return response.data // обычно возвращает UserRead
   },
   

@@ -51,6 +51,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/groups/:groupId/habits/new',
+    name: 'group-habit-create',
+    component: () => import('../views/HabitCreateView.vue'), // тоже переиспользуем форму
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/groups',
     name: 'groups-list',
     component: () => import('../views/GroupsListView.vue'),
@@ -73,6 +79,12 @@ const routes = [
     name: 'group-detail',
     component: () => import('../views/GroupDetailView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/profile',
+    name: 'profile',
+    component: () => import('../views/ProfileView.vue'),
+    meta: { requiresAuth: true, tabBar: true }
   }
 ]
 

@@ -1,7 +1,8 @@
-"""Group business logic: membership, invites, and the shared streak/grace algorithm."""
+"""Group business logic: membership, invites, and keeping each habit's per-member streak rows
+(HabitMember, see services/habits.py) in sync with the group roster.
+"""
 
 from datetime import datetime, timezone
-from typing import Any
 
 from duohabit.errors import (
     ConflictError,
@@ -9,16 +10,14 @@ from duohabit.errors import (
     NotFoundError,
     ValidationAppError,
 )
-from duohabit.models.groups import Group, GroupHabit, GroupMember
-from duohabit.models.habits import HabitType
+from duohabit.models.groups import Group, GroupMember
+from duohabit.models.habits import Habit
+from duohabit.models.habits import HabitType as ModelHabitType
 from duohabit.repositories.groups import GroupRepository
+from duohabit.repositories.habits import HabitRepository
+from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.groups import (
-    GroupCheckinStatus,
     GroupCreate,
-    GroupHabitCheckCreate,
-    GroupHabitCheckRead,
-    GroupHabitRead,
-    GroupHabitUpdate,
     GroupInviteJoin,
     GroupMemberAdd,
     GroupMemberRead,
@@ -26,20 +25,16 @@ from duohabit.schemas.groups import (
     GroupRead,
     GroupRole,
     GroupUpdate,
-    GroupWithHabit,
+    GroupWithHabits,
     JoinMethod,
 )
-from duohabit.schemas.habits import HabitType as SchemaHabitType
+from duohabit.schemas.habits import HabitCreate, HabitRead
+from duohabit.services.habits import reconcile_all_members, habit_model_to_schema
 from duohabit.utils.invite_codes import generate_invite_code
-from duohabit.utils.periods import (
-    compute_period_key,
-    current_period_key,
-    period_end_utc,
-    previous_period_key,
-    utc_today,
-)
+from duohabit.utils.periods import previous_period_key
 
-MAX_MEMBERS = 10
+MAX_MEMBERS = 5
+DEFAULT_TZ = "UTC"
 
 
 # ========== MODEL -> SCHEMA CONVERSION ==========
@@ -55,23 +50,6 @@ def group_model_to_schema(group: Group) -> GroupRead:
         is_active=group.is_active,
         created_at=group.created_at,
         updated_at=group.updated_at,
-    )
-
-
-def group_with_habit_model_to_schema(
-    group: Group, habit: GroupHabit | None, member_count: int
-) -> GroupWithHabit:
-    """Convert a Group ORM model into a read schema enriched with its habit and member count."""
-    return GroupWithHabit(
-        id=group.id,
-        owner_id=group.owner_id,
-        name=group.name,
-        invite_code=group.invite_code,
-        is_active=group.is_active,
-        created_at=group.created_at,
-        updated_at=group.updated_at,
-        habit=group_habit_model_to_schema(habit) if habit else None,
-        member_count=member_count,
     )
 
 
@@ -101,21 +79,6 @@ def group_member_with_user_model_to_schema(
         is_active=member.is_active,
         created_at=member.created_at,
         username=username,
-    )
-
-
-def group_habit_model_to_schema(group_habit: GroupHabit) -> GroupHabitRead:
-    """Convert a GroupHabit ORM model into a read schema."""
-    return GroupHabitRead(
-        id=group_habit.id,
-        group_id=group_habit.group_id,
-        title=group_habit.title,
-        description=group_habit.description,
-        habit_type=SchemaHabitType(group_habit.habit_type),
-        allowed_misses=group_habit.allowed_misses,
-        current_streak=group_habit.current_streak,
-        misses_remaining=group_habit.misses_remaining,
-        is_active=group_habit.is_active,
     )
 
 
@@ -155,70 +118,59 @@ async def _generate_unique_invite_code(repo: GroupRepository) -> str:
     raise ValidationAppError("Could not generate a unique invite code, try again")
 
 
-# ========== STREAK / GRACE RECONCILIATION ==========
+# ========== HABIT-MEMBERSHIP SYNC ==========
 
 
-async def _reconcile_group_habit(
-    repo: GroupRepository, group_habit: GroupHabit
-) -> GroupHabit:
-    """Close out every period that fully elapsed since the last resolution.
-
-    Eager, request-triggered (no scheduler in this codebase): for each period strictly
-    between last_resolved_period_key and the current one, checks whether every member who
-    was active as of that period's end had checked in; a miss consumes the grace pool
-    (misses_remaining) if any is left, otherwise hard-resets current_streak.
-    """
-    habit_type = HabitType(group_habit.habit_type)
-    current = current_period_key(habit_type)
-
-    period = group_habit.last_resolved_period_key
-    if period is None:
-        # Defensive default; in practice always set at creation time.
-        group_habit.last_resolved_period_key = current
-        return group_habit
-    if period == current:
-        return group_habit
-
-    resolved_any = False
-    while True:
-        candidate = compute_period_key(
-            period_end_utc(period, habit_type).date(), habit_type
+async def _add_or_reset_member_habit(
+    habit_repo: HabitRepository, habit: Habit, user_id: int, tz: str
+) -> None:
+    """Give a member a fresh per-habit streak row (first join, or rejoin -- resets to 0)."""
+    habit_type = ModelHabitType(habit.habit_type)
+    seed_period = previous_period_key(habit_type, tz)
+    existing = await habit_repo.get_member(habit.id, user_id)
+    if existing:
+        await habit_repo.update_member(
+            existing,
+            current_streak=0,
+            misses_remaining=habit.allowed_misses,
+            last_resolved_period_key=seed_period,
+            is_active=True,
+            removed_at=None,
         )
-        if candidate == current:
-            break
-
-        as_of = period_end_utc(candidate, habit_type)
-        active_ids = await repo.get_active_member_ids_as_of(group_habit.group_id, as_of)
-        done_count = await repo.count_checks_for_period(group_habit.id, candidate)
-
-        if active_ids and done_count >= len(active_ids):
-            pass  # success; in practice already handled eagerly at check-in time
-        elif group_habit.misses_remaining > 0:
-            group_habit.misses_remaining -= 1
-        else:
-            group_habit.current_streak = 0
-
-        group_habit.last_resolved_period_key = candidate
-        period = candidate
-        resolved_any = True
-
-    if resolved_any:
-        group_habit = await repo.update_group_habit(
-            group_habit,
-            current_streak=group_habit.current_streak,
-            misses_remaining=group_habit.misses_remaining,
-            last_resolved_period_key=group_habit.last_resolved_period_key,
+    else:
+        await habit_repo.add_member(
+            habit.id,
+            user_id,
+            misses_remaining=habit.allowed_misses,
+            last_resolved_period_key=seed_period,
         )
-    return group_habit
 
 
-async def _get_reconciled_group_habit(
-    repo: GroupRepository, group_id: int
-) -> GroupHabit:
-    group_habit = await repo.get_group_habit_by_group(group_id)
-    if not group_habit:
-        raise NotFoundError("Group habit not found")
-    return await _reconcile_group_habit(repo, group_habit)
+async def _sync_join(
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    user_id: int,
+) -> None:
+    """On join/rejoin: give the member a streak row for every active habit of the group."""
+    habits = await habit_repo.get_by_group(group_id, only_active=True)
+    if not habits:
+        return
+    user = await users_repo.get_user(user_id)
+    tz = user.timezone if user else DEFAULT_TZ
+    for habit in habits:
+        await _add_or_reset_member_habit(habit_repo, habit, user_id, tz)
+
+
+async def _sync_leave(
+    habit_repo: HabitRepository, group_id: int, user_id: int, removed_at: datetime
+) -> None:
+    """On leave/kick: freeze the member's streak row on every habit of the group."""
+    habits = await habit_repo.get_by_group(group_id, only_active=True)
+    for habit in habits:
+        member = await habit_repo.get_member(habit.id, user_id)
+        if member and member.is_active:
+            await habit_repo.deactivate_member(member, removed_at=removed_at)
 
 
 # ========== GROUPS ==========
@@ -226,11 +178,8 @@ async def _get_reconciled_group_habit(
 
 async def create_group(
     repo: GroupRepository, user_id: int, group_data: GroupCreate
-) -> GroupWithHabit:
-    """Create a group together with its single shared habit; creator becomes owner."""
-    if group_data.habit_type.value != HabitType.DAILY.value:
-        raise ValidationAppError("Only daily group habits are supported for now")
-
+) -> GroupWithHabits:
+    """Create a group; creator becomes owner. Habits are added afterwards via add_habit_to_group."""
     invite_code = await _generate_unique_invite_code(repo)
     group = await repo.create_group(
         owner_id=user_id, name=group_data.name, invite_code=invite_code
@@ -238,46 +187,76 @@ async def create_group(
     await repo.add_member(
         group.id, user_id, GroupRole.OWNER.value, JoinMethod.ADDED_BY_OWNER.value
     )
-
-    # The current period is still in progress -- seed with the *previous* period key so
-    # today can still be eagerly credited once every member checks in (see check_in).
-    period_key = previous_period_key(HabitType(group_data.habit_type.value))
-    group_habit = await repo.create_group_habit(
-        group_id=group.id,
-        title=group_data.habit_title,
-        description=group_data.habit_description,
-        habit_type=group_data.habit_type.value,
-        allowed_misses=group_data.allowed_misses,
-        initial_period_key=period_key,
+    await repo.commit()
+    return GroupWithHabits(
+        **group_model_to_schema(group).model_dump(), habits=[], member_count=1
     )
 
-    await repo.commit()
-    return group_with_habit_model_to_schema(group, group_habit, member_count=1)
+
+async def _build_group_habit_reads(
+    habit_repo: HabitRepository, users_repo: UsersRepository, group_id: int, user_id: int
+) -> list[HabitRead]:
+    """Reconcile and MIN-aggregate every habit of a group, for the calling member's view."""
+    habits = await habit_repo.get_by_group(group_id, only_active=True)
+    habit_reads: list[HabitRead] = []
+    for habit in habits:
+        await reconcile_all_members(habit_repo, users_repo, habit)
+        my_member = await habit_repo.get_member(habit.id, user_id)
+        min_streak = await habit_repo.get_min_active_streak(habit.id)
+        member_count = len(await habit_repo.get_active_members(habit.id))
+        habit_reads.append(
+            habit_model_to_schema(
+                habit,
+                min_streak=min_streak,
+                member_count=member_count,
+                my_member=my_member,
+            )
+        )
+    if habits:
+        await habit_repo.commit()
+    return habit_reads
 
 
 async def get_user_groups(
-    repo: GroupRepository, user_id: int, only_active: bool = True
-) -> list[GroupRead]:
-    """List groups the user is an active member of."""
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    user_id: int,
+    only_active: bool = True,
+) -> list[GroupWithHabits]:
+    """List groups the user is an active member of, each enriched with its habits."""
     groups = await repo.get_groups_for_user(user_id, only_active=only_active)
-    return [group_model_to_schema(g) for g in groups]
+    result = []
+    for group in groups:
+        habit_reads = await _build_group_habit_reads(habit_repo, users_repo, group.id, user_id)
+        member_count = await repo.count_active_members(group.id)
+        result.append(
+            GroupWithHabits(
+                **group_model_to_schema(group).model_dump(),
+                habits=habit_reads,
+                member_count=member_count,
+            )
+        )
+    return result
 
 
 async def get_group(
-    repo: GroupRepository, group_id: int, user_id: int
-) -> GroupWithHabit:
-    """Get group details, habit, and member count. Reconciles any elapsed periods first."""
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    user_id: int,
+) -> GroupWithHabits:
+    """Get group details, its habits (each reconciled), and member count."""
     await _require_member(repo, group_id, user_id)
     group = await _get_group_or_404(repo, group_id)
 
-    group_habit = await repo.get_group_habit_by_group(group_id)
-    if group_habit:
-        group_habit = await _reconcile_group_habit(repo, group_habit)
-        await repo.commit()
-
+    habit_reads = await _build_group_habit_reads(habit_repo, users_repo, group_id, user_id)
     member_count = await repo.count_active_members(group_id)
-    return group_with_habit_model_to_schema(
-        group, group_habit, member_count=member_count
+    return GroupWithHabits(
+        **group_model_to_schema(group).model_dump(),
+        habits=habit_reads,
+        member_count=member_count,
     )
 
 
@@ -293,7 +272,7 @@ async def update_group(
 
 
 async def delete_group(repo: GroupRepository, group_id: int, user_id: int) -> None:
-    """Disband a group (owner only). Cascades to members, habit, and checks."""
+    """Disband a group (owner only). Cascades to members and habits."""
     group = await _require_owner(repo, group_id, user_id)
     await repo.delete_group(group)
     await repo.commit()
@@ -314,8 +293,12 @@ async def regenerate_invite_code(
 
 
 async def join_group_by_code(
-    repo: GroupRepository, user_id: int, invite_join: GroupInviteJoin
-) -> GroupWithHabit:
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    user_id: int,
+    invite_join: GroupInviteJoin,
+) -> GroupWithHabits:
     """Join a group using its invite code."""
     group = await repo.get_group_by_invite_code(invite_join.invite_code)
     if not group or not group.is_active:
@@ -335,18 +318,17 @@ async def join_group_by_code(
         await repo.add_member(
             group.id, user_id, GroupRole.MEMBER.value, JoinMethod.INVITE_CODE.value
         )
-
+    await _sync_join(habit_repo, users_repo, group.id, user_id)
     await repo.commit()
+    await habit_repo.commit()
 
-    group_habit = await repo.get_group_habit_by_group(group.id)
-    member_count = await repo.count_active_members(group.id)
-    return group_with_habit_model_to_schema(
-        group, group_habit, member_count=member_count
-    )
+    return await get_group(repo, habit_repo, users_repo, group.id, user_id)
 
 
 async def add_member(
     repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
     group_id: int,
     owner_user_id: int,
     member_data: GroupMemberAdd,
@@ -373,13 +355,18 @@ async def add_member(
             GroupRole.MEMBER.value,
             JoinMethod.ADDED_BY_OWNER.value,
         )
-
+    await _sync_join(habit_repo, users_repo, group_id, member_data.user_id)
     await repo.commit()
+    await habit_repo.commit()
     return group_member_model_to_schema(member)
 
 
 async def remove_member(
-    repo: GroupRepository, group_id: int, owner_user_id: int, target_user_id: int
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    group_id: int,
+    owner_user_id: int,
+    target_user_id: int,
 ) -> None:
     """Remove a member from a group (owner only; owner cannot remove themself)."""
     await _require_owner(repo, group_id, owner_user_id)
@@ -392,19 +379,27 @@ async def remove_member(
     if not member or not member.is_active:
         raise NotFoundError("Member not found")
 
-    await repo.remove_member(member, removed_at=datetime.now(timezone.utc))
+    removed_at = datetime.now(timezone.utc)
+    await repo.remove_member(member, removed_at=removed_at)
+    await _sync_leave(habit_repo, group_id, target_user_id, removed_at)
     await repo.commit()
+    await habit_repo.commit()
 
 
-async def leave_group(repo: GroupRepository, group_id: int, user_id: int) -> None:
+async def leave_group(
+    repo: GroupRepository, habit_repo: HabitRepository, group_id: int, user_id: int
+) -> None:
     """Leave a group (owner must delete the group instead)."""
     member = await _require_member(repo, group_id, user_id)
     group = await _get_group_or_404(repo, group_id)
     if group.owner_id == user_id:
         raise ValidationAppError("Owner cannot leave the group; delete it instead")
 
-    await repo.remove_member(member, removed_at=datetime.now(timezone.utc))
+    removed_at = datetime.now(timezone.utc)
+    await repo.remove_member(member, removed_at=removed_at)
+    await _sync_leave(habit_repo, group_id, user_id, removed_at)
     await repo.commit()
+    await habit_repo.commit()
 
 
 async def list_members(
@@ -419,115 +414,48 @@ async def list_members(
     ]
 
 
-# ========== GROUP HABIT ==========
+# ========== GROUP HABITS ==========
 
 
-async def update_group_habit(
-    repo: GroupRepository, group_id: int, user_id: int, habit_data: GroupHabitUpdate
-) -> GroupHabitRead:
-    """Edit the group habit's title/description/allowed_misses (owner only)."""
-    await _require_owner(repo, group_id, user_id)
-    group_habit = await _get_reconciled_group_habit(repo, group_id)
-
-    update_data = habit_data.model_dump(exclude_unset=True)
-    if update_data.get("allowed_misses") is not None:
-        delta = update_data["allowed_misses"] - group_habit.allowed_misses
-        update_data["misses_remaining"] = max(0, group_habit.misses_remaining + delta)
-
-    updated = await repo.update_group_habit(group_habit, **update_data)
-    await repo.commit()
-    return group_habit_model_to_schema(updated)
-
-
-# ========== CHECK-INS ==========
-
-
-async def check_in(
+async def add_habit_to_group(
     repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    owner_user_id: int,
+    habit_data: HabitCreate,
+) -> HabitRead:
+    """Add a new shared habit to a group (owner only); every current active member joins it."""
+    await _require_owner(repo, group_id, owner_user_id)
+
+    habit = await habit_repo.create(
+        creator_id=owner_user_id,
+        title=habit_data.title,
+        description=habit_data.description,
+        habit_type=habit_data.habit_type.value,
+        allowed_misses=habit_data.allowed_misses,
+        group_id=group_id,
+    )
+    members = await repo.get_members(group_id, only_active=True)
+    for group_member in members:
+        user = await users_repo.get_user(group_member.user_id)
+        tz = user.timezone if user else DEFAULT_TZ
+        await _add_or_reset_member_habit(habit_repo, habit, group_member.user_id, tz)
+    await habit_repo.commit()
+
+    my_member = await habit_repo.get_member(habit.id, owner_user_id)
+    return habit_model_to_schema(
+        habit, min_streak=0, member_count=len(members), my_member=my_member
+    )
+
+
+async def get_group_habits(
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
     group_id: int,
     user_id: int,
-    check_data: GroupHabitCheckCreate,
-) -> dict[str, Any]:
-    """Check in on the group habit for the current period."""
+) -> list[HabitRead]:
+    """List a group's habits, each reconciled and MIN-aggregated across active members."""
     await _require_member(repo, group_id, user_id)
-    group_habit = await _get_reconciled_group_habit(repo, group_id)
-
-    habit_type = HabitType(group_habit.habit_type)
-    period = current_period_key(habit_type)
-    check_date = check_data.check_date or utc_today()
-    if compute_period_key(check_date, habit_type) != period:
-        raise ValidationAppError("Check-in must be for the current period")
-
-    existing = await repo.get_check(group_habit.id, user_id, period)
-    if existing:
-        raise ConflictError("Already checked in for this period")
-
-    await repo.create_group_habit_check(group_habit.id, user_id, check_date, period)
-
-    active_count = await repo.count_active_members(group_id)
-    done_count = await repo.count_checks_for_period(group_habit.id, period)
-
-    streak_incremented = False
-    if done_count >= active_count and group_habit.last_resolved_period_key != period:
-        group_habit = await repo.update_group_habit(
-            group_habit,
-            current_streak=group_habit.current_streak + 1,
-            last_resolved_period_key=period,
-        )
-        streak_incremented = True
-
-    await repo.commit()
-
-    all_done = done_count >= active_count
-    message = (
-        f"Стрик: {group_habit.current_streak} дней подряд! 🔥"
-        if streak_incremented
-        else "Отмечено, ждём остальных участников."
-    )
-    return {
-        "checked": True,
-        "period_key": period,
-        "current_streak": group_habit.current_streak,
-        "all_members_done": all_done,
-        "message": message,
-    }
-
-
-async def get_checkin_status(
-    repo: GroupRepository, group_id: int, user_id: int
-) -> GroupCheckinStatus:
-    """Who has and hasn't checked in for the current period."""
-    await _require_member(repo, group_id, user_id)
-    group_habit = await _get_reconciled_group_habit(repo, group_id)
-    await repo.commit()
-
-    habit_type = HabitType(group_habit.habit_type)
-    period = current_period_key(habit_type)
-
-    checks = await repo.get_checks_for_period(group_habit.id, period)
-    checked_in_ids = [c.user_id for c in checks]
-
-    active_ids = await repo.get_active_member_ids_as_of(
-        group_id, datetime.now(timezone.utc)
-    )
-    missing_ids = [uid for uid in active_ids if uid not in checked_in_ids]
-
-    return GroupCheckinStatus(
-        period_key=period,
-        total_active_members=len(active_ids),
-        checked_in_user_ids=checked_in_ids,
-        missing_user_ids=missing_ids,
-        all_done=len(active_ids) > 0 and len(missing_ids) == 0,
-    )
-
-
-async def get_my_checks(
-    repo: GroupRepository, group_id: int, user_id: int, limit: int = 30
-) -> list[GroupHabitCheckRead]:
-    """Get the caller's recent checks for the group habit."""
-    await _require_member(repo, group_id, user_id)
-    group_habit = await repo.get_group_habit_by_group(group_id)
-    if not group_habit:
-        raise NotFoundError("Group habit not found")
-    checks = await repo.get_checks_for_user(group_habit.id, user_id, limit=limit)
-    return [GroupHabitCheckRead.model_validate(c) for c in checks]
+    return await _build_group_habit_reads(habit_repo, users_repo, group_id, user_id)

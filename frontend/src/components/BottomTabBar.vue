@@ -7,7 +7,8 @@ const router = useRouter()
 
 const tabs = [
   { path: '/', label: 'Привычки', icon: '📅' },
-  { path: '/groups', label: 'Группы', icon: '👥' }
+  { path: '/groups', label: 'Группы', icon: '👥' },
+  { path: '/profile', label: 'Профиль', icon: '🙋' }
 ]
 
 const isActive = (path) => route.path === path

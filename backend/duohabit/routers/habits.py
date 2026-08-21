@@ -1,35 +1,36 @@
-"""Habit API routes."""
+"""Habit API routes: personal habits (group habits are also served here by id, see routers/groups.py
+for group-scoped listing/creation)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Any
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import date
 
+from duohabit.auth import get_token_claim
 from duohabit.db import get_session
-from duohabit.models.users import User
 from duohabit.repositories.habits import HabitRepository
+from duohabit.repositories.users import UsersRepository
+from duohabit.schemas.auth import AccessTokenClaim
 from duohabit.schemas.habits import (
-    HabitCreate, 
-    HabitUpdate, 
-    HabitRead,
+    HabitCheckinStatus,
     HabitCheckRead,
+    HabitCreate,
+    HabitRead,
+    HabitUpdate,
     HabitWithChecks,
-    HabitStats
 )
 from duohabit.services.habits import (
-    create_habit,
-    get_habit,
-    update_habit,
     archive_habit,
-    get_habit_checks,
-    get_habit_stats,
+    check_in,
+    create_habit,
+    delete_habit,
+    get_checkin_status,
+    get_habit,
+    get_my_checks,
     get_user_habits,
     restore_habit,
-    delete_check,
-    delete_habit,
-    check_habit
+    update_habit,
 )
-from duohabit.auth import get_token_claim
-from duohabit.schemas.auth import AccessTokenClaim
 
 habits_router = APIRouter(prefix="/habits", tags=["Habits"])
 
@@ -38,13 +39,14 @@ habits_router = APIRouter(prefix="/habits", tags=["Habits"])
 async def create_habit_endpoint(
     habit_data: HabitCreate,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Create a new habit."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitRead:
+    """Create a new personal habit."""
     return await create_habit(
         repo=HabitRepository(session),
+        users_repo=UsersRepository(session),
         user_id=token_claim.user_id,
-        habit_data=habit_data
+        habit_data=habit_data,
     )
 
 
@@ -52,13 +54,14 @@ async def create_habit_endpoint(
 async def get_habits_endpoint(
     only_active: bool = Query(True, description="Filter by active status"),
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Get all habits for current user."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> list[HabitRead]:
+    """Get the caller's personal habits (group habits: see GET /groups/{id}/habits)."""
     return await get_user_habits(
         repo=HabitRepository(session),
+        users_repo=UsersRepository(session),
         user_id=token_claim.user_id,
-        only_active=only_active
+        only_active=only_active,
     )
 
 
@@ -66,13 +69,14 @@ async def get_habits_endpoint(
 async def get_habit_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Get a specific habit."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitRead:
+    """Get a specific habit (personal or group -- any active participant may view)."""
     return await get_habit(
         repo=HabitRepository(session),
+        users_repo=UsersRepository(session),
         habit_id=habit_id,
-        user_id=token_claim.user_id
+        user_id=token_claim.user_id,
     )
 
 
@@ -80,14 +84,15 @@ async def get_habit_endpoint(
 async def get_habit_with_checks_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Get a specific habit with its recent checks."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitWithChecks:
+    """Get a specific habit with the caller's recent checks."""
     return await get_habit(
         repo=HabitRepository(session),
+        users_repo=UsersRepository(session),
         habit_id=habit_id,
         user_id=token_claim.user_id,
-        with_checks=True
+        with_checks=True,
     )
 
 
@@ -96,14 +101,14 @@ async def update_habit_endpoint(
     habit_id: int,
     habit_data: HabitUpdate,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Update a habit."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitRead:
+    """Update a habit (creator only)."""
     return await update_habit(
         repo=HabitRepository(session),
         habit_id=habit_id,
         user_id=token_claim.user_id,
-        habit_data=habit_data
+        habit_data=habit_data,
     )
 
 
@@ -111,29 +116,26 @@ async def update_habit_endpoint(
 async def delete_habit_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Delete a habit permanently."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> None:
+    """Delete a habit permanently (creator only)."""
     await delete_habit(
-        repo=HabitRepository(session),
-        habit_id=habit_id,
-        user_id=token_claim.user_id
+        repo=HabitRepository(session), habit_id=habit_id, user_id=token_claim.user_id
     )
 
 
 # ========== ARCHIVE / RESTORE ==========
 
+
 @habits_router.post("/{habit_id}/archive", response_model=HabitRead)
 async def archive_habit_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Archive a habit (soft delete)."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitRead:
+    """Archive a habit (creator only)."""
     return await archive_habit(
-        repo=HabitRepository(session),
-        habit_id=habit_id,
-        user_id=token_claim.user_id
+        repo=HabitRepository(session), habit_id=habit_id, user_id=token_claim.user_id
     )
 
 
@@ -141,29 +143,29 @@ async def archive_habit_endpoint(
 async def restore_habit_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Restore an archived habit."""
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitRead:
+    """Restore an archived habit (creator only)."""
     return await restore_habit(
-        repo=HabitRepository(session),
-        habit_id=habit_id,
-        user_id=token_claim.user_id
+        repo=HabitRepository(session), habit_id=habit_id, user_id=token_claim.user_id
     )
 
 
-# ========== HABIT CHECKS ==========
+# ========== CHECK-INS ==========
+
 
 @habits_router.post("/{habit_id}/check")
-async def check_habit_endpoint(
+async def check_in_endpoint(
     habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Mark habit as done for today or specific date."""
-    return await check_habit(
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> dict[str, Any]:
+    """Check in on a habit for today, in the caller's own timezone. No backfill."""
+    return await check_in(
         repo=HabitRepository(session),
+        users_repo=UsersRepository(session),
         habit_id=habit_id,
-        user_id=token_claim.user_id
+        user_id=token_claim.user_id,
     )
 
 
@@ -172,68 +174,27 @@ async def get_habit_checks_endpoint(
     habit_id: int,
     limit: int = Query(30, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Get last N checks for a habit."""
-    return await get_habit_checks(
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> list[HabitCheckRead]:
+    """Get the caller's last N checks for a habit."""
+    return await get_my_checks(
         repo=HabitRepository(session),
         habit_id=habit_id,
         user_id=token_claim.user_id,
-        limit=limit
+        limit=limit,
     )
 
 
-@habits_router.delete("/checks/{check_id}", status_code=204)
-async def delete_check_endpoint(
-    check_id: int,
+@habits_router.get("/{habit_id}/checks/status", response_model=HabitCheckinStatus)
+async def get_checkin_status_endpoint(
+    habit_id: int,
     session: AsyncSession = Depends(get_session),
-    token_claim: AccessTokenClaim = Depends(get_token_claim)
-):
-    """Delete a specific check."""
-    await delete_check(
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> HabitCheckinStatus:
+    """See who has and hasn't checked in for their own current period."""
+    return await get_checkin_status(
         repo=HabitRepository(session),
-        check_id=check_id,
-        user_id=token_claim.user_id
+        users_repo=UsersRepository(session),
+        habit_id=habit_id,
+        user_id=token_claim.user_id,
     )
-
-
-# ========== STATISTICS ==========
-
-# @habits_router.get("/{habit_id}/stats", response_model=HabitStats)
-# async def get_habit_stats_endpoint(
-#     habit_id: int,
-#     session: AsyncSession = Depends(get_session),
-#     user: User = Depends(current_user)
-# ):
-#     """Get detailed statistics for a habit."""
-#     repo = HabitRepository(session)
-#     try:
-#         return await habits_service.get_habit_stats(repo, habit_id, user.id)
-#     except Exception as e:
-#         raise HTTPException(status_code=404, detail=str(e))
-
-
-# @habits_router.get("/{habit_id}/completion-rate")
-# async def get_completion_rate_endpoint(
-#     habit_id: int,
-#     days: int = Query(30, ge=7, le=365),
-#     session: AsyncSession = Depends(get_session),
-#     user: User = Depends(current_user)
-# ):
-#     """Get habit completion rate for last N days."""
-#     repo = HabitRepository(session)
-#     try:
-#         # Проверяем доступ
-#         habit = await repo.get_by_id(habit_id, user.id)
-#         if not habit:
-#             raise HTTPException(status_code=404, detail="Habit not found")
-        
-#         rate = await repo.get_completion_rate(habit_id, days)
-#         return {
-#             "habit_id": habit_id,
-#             "days": days,
-#             "completion_rate": round(rate, 2),
-#             "habit_type": habit.habit_type.value
-#         }
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=str(e))

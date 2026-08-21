@@ -23,6 +23,7 @@ const formData = ref({
   name: '',
   habit_title: '',
   habit_description: '',
+  habit_type: 'daily',
   allowed_misses: 0
 })
 
@@ -57,7 +58,15 @@ const handleSubmit = async () => {
   error.value = ''
 
   try {
-    const group = await groupsStore.createGroup(formData.value)
+    // Группа и её первая привычка — два отдельных запроса на новом бэке:
+    // группа сама по себе просто ростер, привычка привязывается к ней отдельно.
+    const group = await groupsStore.createGroup({ name: formData.value.name })
+    await groupsStore.addHabitToGroup(group.id, {
+      title: formData.value.habit_title,
+      description: formData.value.habit_description,
+      habit_type: formData.value.habit_type,
+      allowed_misses: formData.value.allowed_misses
+    })
     router.push(`/groups/${group.id}`)
   } catch (err) {
     error.value = err.response?.data?.detail || 'Ошибка при создании группы'

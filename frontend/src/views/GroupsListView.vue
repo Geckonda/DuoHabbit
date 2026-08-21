@@ -63,8 +63,11 @@ onMounted(() => {
           <div>
             <div class="title">{{ group.name }}</div>
             <div class="meta">
-              <span v-if="group.habit">🔥 {{ group.habit.current_streak || 0 }}</span>
-              <span v-if="group.member_count">👥 {{ group.member_count }}</span>
+              <span>👥 {{ group.member_count }}</span>
+              <span v-if="group.habits?.length">📋 {{ group.habits.length }}</span>
+              <span v-if="group.habits?.length">
+                🔥 {{ Math.min(...group.habits.map(h => h.current_streak)) }}
+              </span>
             </div>
           </div>
           <span class="chevron">›</span>

@@ -1,11 +1,11 @@
-"""Group schemas."""
+"""Group schemas: name, invite code, membership. Habit schemas live in schemas/habits.py."""
 
-from datetime import date, datetime
+from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel
 
-from duohabit.schemas.habits import HabitType
+from duohabit.schemas.habits import HabitRead
 
 
 class GroupRole(str, Enum):
@@ -32,12 +32,7 @@ class GroupBase(BaseModel):
 
 
 class GroupCreate(GroupBase):
-    """Schema for creating a group together with its single shared habit."""
-
-    habit_title: str
-    habit_description: str | None = None
-    habit_type: HabitType = HabitType.DAILY
-    allowed_misses: int = 0
+    """Schema for creating a group. Habits are added afterwards via /groups/{id}/habits."""
 
 
 class GroupUpdate(BaseModel):
@@ -60,43 +55,10 @@ class GroupRead(GroupBase):
         from_attributes = True
 
 
-# ========== GROUP HABIT ==========
+class GroupWithHabits(GroupRead):
+    """Group enriched with its habits and member count."""
 
-
-class GroupHabitBase(BaseModel):
-    """Base group-habit schema."""
-
-    title: str
-    description: str | None = None
-    habit_type: HabitType = HabitType.DAILY
-    allowed_misses: int = 0
-
-
-class GroupHabitUpdate(BaseModel):
-    """Schema for updating a group habit (habit_type is intentionally not editable)."""
-
-    title: str | None = None
-    description: str | None = None
-    allowed_misses: int | None = None
-
-
-class GroupHabitRead(GroupHabitBase):
-    """Schema for reading a group habit."""
-
-    id: int
-    group_id: int
-    current_streak: int = 0
-    misses_remaining: int = 0
-    is_active: bool = True
-
-    class Config:
-        from_attributes = True
-
-
-class GroupWithHabit(GroupRead):
-    """Group enriched with its habit and member count."""
-
-    habit: GroupHabitRead | None = None
+    habits: list[HabitRead] = []
     member_count: int = 0
 
 
@@ -139,35 +101,3 @@ class GroupInviteJoin(BaseModel):
     """Schema for joining a group by invite code."""
 
     invite_code: str
-
-
-# ========== CHECKS ==========
-
-
-class GroupHabitCheckCreate(BaseModel):
-    """Schema for checking in on the group habit (always the current period)."""
-
-    check_date: date | None = None
-
-
-class GroupHabitCheckRead(BaseModel):
-    """Schema for reading a group habit check."""
-
-    id: int
-    group_habit_id: int
-    user_id: int
-    check_date: date
-    period_key: str
-
-    class Config:
-        from_attributes = True
-
-
-class GroupCheckinStatus(BaseModel):
-    """Who has and hasn't checked in for the current period."""
-
-    period_key: str
-    total_active_members: int
-    checked_in_user_ids: list[int]
-    missing_user_ids: list[int]
-    all_done: bool

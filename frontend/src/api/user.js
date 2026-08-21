@@ -11,5 +11,9 @@ export const users = {
     api.get(`/users/${userId}`),
   // Список пользователей (для поиска при добавлении в группу)
   getAll: (limit = 100) =>
-    api.get('/users/', { params: { limit } })
+    api.get('/users/', { params: { limit } }),
+
+  // Обновить свой профиль (только username/timezone — сознательно узкий эндпоинт)
+  updateMe: (data) =>
+    api.patch('/users/me', data)
 }

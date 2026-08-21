@@ -11,13 +11,14 @@ from duohabit.auth import (
 from duohabit.db import get_session
 from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.auth import AccessTokenClaim
-from duohabit.schemas.users import UserCreate, UserOut
+from duohabit.schemas.users import UserCreate, UserOut, UserSelfUpdate, UserUpdate
 from duohabit.schemas.common import PaginationParams
 from duohabit.services.users import (
     UserManager,
     create_user,
     get_user,
-    get_users
+    get_users,
+    update_user,
 )
 
 users_router = APIRouter(prefix="/users", tags=["Users"])
@@ -48,6 +49,27 @@ async def get_current_user_endpoint(
     Requires authentication.
     """
     return await get_user(UsersRepository(session), token_claim.user_id, token_claim)
+
+
+@users_router.patch("/me", response_model=UserOut, response_model_exclude_none=True)
+async def update_current_user_endpoint(
+    user_in: UserSelfUpdate,
+    session: AsyncSession = Depends(get_session),
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+    manager: UserManager = Depends(get_user_manager),
+) -> UserOut:
+    """
+    Update the currently authenticated user's own profile (username, timezone only).
+    Requires authentication. Cannot change email, password, or admin status here.
+    """
+    update_data = user_in.model_dump(exclude_unset=True)
+    return await update_user(
+        UsersRepository(session),
+        token_claim.user_id,
+        UserUpdate(**update_data),
+        token_claim,
+        manager,
+    )
 
 
 @users_router.get(

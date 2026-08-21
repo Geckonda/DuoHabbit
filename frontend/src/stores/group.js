@@ -8,7 +8,6 @@ export const useGroupsStore = defineStore('groups', () => {
   const groupsList = ref([])
   const currentGroup = ref(null)
   const members = ref([])
-  const checkinStatus = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
   const lastFetched = ref(null) // для кеширования
@@ -65,13 +64,13 @@ export const useGroupsStore = defineStore('groups', () => {
     }
   }
 
-  // Создание группы
+  // Создание группы (только имя — привычки добавляются отдельным вызовом)
   const createGroup = async (data) => {
     isLoading.value = true
     error.value = null
 
     try {
-      const response = await groups.create(data)
+      const response = await groups.create({ name: data.name })
       groupsList.value.push(response.data)
       return response.data
     } catch (err) {
@@ -79,6 +78,40 @@ export const useGroupsStore = defineStore('groups', () => {
       throw err
     } finally {
       isLoading.value = false
+    }
+  }
+
+  // Добавление новой общей привычки в группу (только владелец)
+  const addHabitToGroup = async (groupId, habitData) => {
+    try {
+      const response = await groups.addHabit(groupId, habitData)
+
+      if (currentGroup.value?.id === groupId) {
+        currentGroup.value.habits = [...(currentGroup.value.habits || []), response.data]
+      }
+      const group = groupsList.value.find(g => g.id === groupId)
+      if (group) {
+        group.habits = [...(group.habits || []), response.data]
+      }
+
+      return response.data
+    } catch (err) {
+      error.value = err.response?.data?.detail || 'Ошибка добавления привычки'
+      throw err
+    }
+  }
+
+  // Список привычек группы (обычно не нужен отдельно — приходят вместе с группой)
+  const fetchGroupHabits = async (groupId) => {
+    try {
+      const response = await groups.getHabits(groupId)
+      if (currentGroup.value?.id === groupId) {
+        currentGroup.value.habits = response.data
+      }
+      return response.data
+    } catch (err) {
+      error.value = err.response?.data?.detail || 'Ошибка загрузки привычек группы'
+      throw err
     }
   }
 
@@ -203,52 +236,11 @@ export const useGroupsStore = defineStore('groups', () => {
     }
   }
 
-  // Изменение общей привычки
-  const updateGroupHabit = async (groupId, data) => {
-    try {
-      const response = await groups.updateHabit(groupId, data)
-      if (currentGroup.value?.id === groupId) {
-        currentGroup.value = { ...currentGroup.value, habit: response.data }
-      }
-      return response.data
-    } catch (err) {
-      error.value = err.response?.data?.detail || 'Ошибка обновления привычки'
-      throw err
-    }
-  }
-
-  // Отметка выполнения за текущий период
-  const checkIn = async (groupId) => {
-    try {
-      const response = await groups.checkIn(groupId)
-      if (currentGroup.value?.id === groupId && currentGroup.value.habit) {
-        currentGroup.value.habit.current_streak = response.data.current_streak
-      }
-      return response.data
-    } catch (err) {
-      error.value = err.response?.data?.detail || 'Ошибка отметки'
-      throw err
-    }
-  }
-
-  // Кто уже отметился за текущий период
-  const fetchCheckinStatus = async (groupId) => {
-    try {
-      const response = await groups.getCheckinStatus(groupId)
-      checkinStatus.value = response.data
-      return checkinStatus.value
-    } catch (err) {
-      error.value = err.response?.data?.detail || 'Ошибка загрузки статуса отметок'
-      throw err
-    }
-  }
-
   // Очистка стора (например при логауте)
   const $reset = () => {
     groupsList.value = []
     currentGroup.value = null
     members.value = []
-    checkinStatus.value = null
     isLoading.value = false
     error.value = null
     lastFetched.value = null
@@ -259,7 +251,6 @@ export const useGroupsStore = defineStore('groups', () => {
     groupsList,
     currentGroup,
     members,
-    checkinStatus,
     isLoading,
     error,
     lastFetched,
@@ -268,6 +259,8 @@ export const useGroupsStore = defineStore('groups', () => {
     fetchGroups,
     fetchGroupById,
     createGroup,
+    addHabitToGroup,
+    fetchGroupHabits,
     updateGroup,
     deleteGroup,
     regenerateInvite,
@@ -276,9 +269,6 @@ export const useGroupsStore = defineStore('groups', () => {
     addMember,
     removeMember,
     leaveGroup,
-    updateGroupHabit,
-    checkIn,
-    fetchCheckinStatus,
     $reset
   }
 })

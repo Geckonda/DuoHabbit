@@ -3,21 +3,23 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useGroupsStore } from '../stores/group'
+import { useHabitsStore } from '../stores/habit'
 import { useUserStore } from '../stores/user'
 import { users } from '../api/user'
 import AppHeader from '../components/AppHeader.vue'
 import ActionMenu from '../components/ActionMenu.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
-import StatGrid from '../components/StatGrid.vue'
 import PillButton from '../components/PillButton.vue'
 import GlassCard from '../components/GlassCard.vue'
 
 const route = useRoute()
 const router = useRouter()
 const groupsStore = useGroupsStore()
+const habitsStore = useHabitsStore()
 const userStore = useUserStore()
 
 const groupId = Number(route.params.id)
+const typeIcons = { daily: '📅', weekdays: '💼', weekly: '📆', monthly: '📊' }
 
 const isLoading = ref(true)
 const error = ref('')
@@ -30,31 +32,18 @@ const userSearchQuery = ref('')
 const allUsers = ref([])
 const isLoadingUsers = ref(false)
 const copyHint = ref('')
+const checkingInId = ref(null)
+const checkinStatusByHabit = ref({})
 
-const settingsForm = ref({
-  name: '',
-  habit_title: '',
-  habit_description: '',
-  allowed_misses: 0
-})
+const settingsForm = ref({ name: '' })
 
 const group = computed(() => groupsStore.currentGroup)
 const members = computed(() => groupsStore.members)
-const checkinStatus = computed(() => groupsStore.checkinStatus)
+const habits = computed(() => group.value?.habits || [])
 
 const isOwner = computed(() =>
   group.value && userStore.user && group.value.owner_id === userStore.user.id
 )
-
-const hasCheckedInToday = computed(() =>
-  checkinStatus.value?.checked_in_user_ids?.includes(userStore.user?.id)
-)
-
-const stats = computed(() => [
-  { value: group.value?.habit?.current_streak || 0, label: '🔥 Стрик' },
-  { value: `${group.value?.habit?.misses_remaining ?? 0}/${group.value?.habit?.allowed_misses ?? 0}`, label: '🛡️ Прощений' },
-  { value: group.value?.member_count || members.value.length, label: '👥 Участников' }
-])
 
 const filteredUsers = computed(() => {
   const memberIds = new Set(members.value.map(m => m.user_id))
@@ -64,6 +53,21 @@ const filteredUsers = computed(() => {
     .filter(u => !query || u.username.toLowerCase().includes(query))
 })
 
+const hasCheckedIn = (habitId) =>
+  checkinStatusByHabit.value[habitId]?.checked_in_user_ids?.includes(userStore.user?.id)
+
+const doneCount = (habitId) => {
+  const status = checkinStatusByHabit.value[habitId]
+  return status ? `${status.checked_in_user_ids.length}/${status.total_active_members}` : ''
+}
+
+const loadCheckinStatuses = async () => {
+  const entries = await Promise.all(
+    habits.value.map(async (h) => [h.id, await habitsStore.fetchCheckinStatus(h.id)])
+  )
+  checkinStatusByHabit.value = Object.fromEntries(entries)
+}
+
 const load = async () => {
   isLoading.value = true
   error.value = ''
@@ -71,25 +75,14 @@ const load = async () => {
   try {
     await Promise.all([
       groupsStore.fetchGroupById(groupId),
-      groupsStore.fetchMembers(groupId),
-      groupsStore.fetchCheckinStatus(groupId)
+      groupsStore.fetchMembers(groupId)
     ])
+    await loadCheckinStatuses()
   } catch (err) {
     error.value = 'Не удалось загрузить группу'
     console.error(err)
   } finally {
     isLoading.value = false
-  }
-}
-
-const isCheckedIn = (userId) => checkinStatus.value?.checked_in_user_ids?.includes(userId)
-
-const handleCheckIn = async () => {
-  try {
-    await groupsStore.checkIn(groupId)
-    await groupsStore.fetchCheckinStatus(groupId)
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Ошибка при отметке'
   }
 }
 
@@ -118,26 +111,40 @@ const handleRegenerateInvite = async () => {
   }
 }
 
-const openSettings = () => {
-  settingsForm.value = {
-    name: group.value.name,
-    habit_title: group.value.habit?.title || '',
-    habit_description: group.value.habit?.description || '',
-    allowed_misses: group.value.habit?.allowed_misses ?? 0
+const handleAddHabit = () => {
+  router.push(`/groups/${groupId}/habits/new`)
+}
+
+const handleCheckIn = async (habitId) => {
+  checkingInId.value = habitId
+  try {
+    const result = await habitsStore.checkHabit(habitId)
+
+    // Карточка рендерится из group.habits (groupsStore), а не из habitsStore —
+    // патчим стрики прямо тут, иначе останутся старые значения до перезагрузки страницы.
+    const habitInGroup = habits.value.find(h => h.id === habitId)
+    if (habitInGroup) {
+      habitInGroup.current_streak = result.current_streak
+      habitInGroup.my_current_streak = result.my_current_streak
+    }
+
+    checkinStatusByHabit.value[habitId] = await habitsStore.fetchCheckinStatus(habitId)
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Ошибка при отметке'
+  } finally {
+    checkingInId.value = null
   }
+}
+
+const openSettings = () => {
+  settingsForm.value = { name: group.value.name }
   showSettingsModal.value = true
 }
 
 const handleSaveSettings = async () => {
   try {
     await groupsStore.updateGroup(groupId, { name: settingsForm.value.name })
-    await groupsStore.updateGroupHabit(groupId, {
-      title: settingsForm.value.habit_title,
-      description: settingsForm.value.habit_description,
-      allowed_misses: settingsForm.value.allowed_misses
-    })
     showSettingsModal.value = false
-    await load()
   } catch (err) {
     error.value = err.response?.data?.detail || 'Ошибка сохранения настроек'
   }
@@ -146,7 +153,7 @@ const handleSaveSettings = async () => {
 const handleRemoveMember = async (member) => {
   try {
     await groupsStore.removeMember(groupId, member.user_id)
-    await groupsStore.fetchCheckinStatus(groupId)
+    await loadCheckinStatuses()
   } catch (err) {
     error.value = err.response?.data?.detail || 'Ошибка удаления участника'
   }
@@ -172,7 +179,8 @@ const openAddMember = async () => {
 const handleAddMember = async (user) => {
   try {
     await groupsStore.addMember(groupId, user.id)
-    await groupsStore.fetchCheckinStatus(groupId)
+    await groupsStore.fetchGroupHabits(groupId)
+    await loadCheckinStatuses()
     showAddMemberModal.value = false
   } catch (err) {
     error.value = err.response?.data?.detail || 'Ошибка добавления участника'
@@ -212,6 +220,10 @@ onMounted(() => {
           <button class="menu-btn" @click="showMenu = !showMenu">•••</button>
           <ActionMenu v-model="showMenu">
             <template v-if="isOwner">
+              <button @click="handleAddHabit" class="menu-item">
+                <span class="menu-icon">➕</span>
+                Добавить привычку
+              </button>
               <button @click="handleCopyInvite" class="menu-item">
                 <span class="menu-icon">🔗</span>
                 Скопировать ссылку-приглашение
@@ -221,12 +233,12 @@ onMounted(() => {
                 Обновить код приглашения
               </button>
               <button @click="openAddMember" class="menu-item">
-                <span class="menu-icon">➕</span>
+                <span class="menu-icon">👤</span>
                 Добавить участника
               </button>
               <button @click="openSettings" class="menu-item">
                 <span class="menu-icon">⚙️</span>
-                Настройки
+                Переименовать
               </button>
               <button @click="showDeleteModal = true" class="menu-item delete">
                 <span class="menu-icon">🗑️</span>
@@ -253,16 +265,52 @@ onMounted(() => {
       </div>
 
       <div v-else-if="group" class="group-info">
-        <div class="group-header">
-          <p v-if="group.habit" class="habit-title">{{ group.habit.title }}</p>
-          <p v-if="group.habit?.description" class="habit-description">{{ group.habit.description }}</p>
+        <div class="group-summary">
+          <span>👥 {{ group.member_count }} {{ group.member_count === 1 ? 'участник' : 'участников' }}</span>
+          <span>📋 {{ habits.length }} {{ habits.length === 1 ? 'привычка' : 'привычек' }}</span>
         </div>
 
         <p v-if="copyHint" class="copy-hint">{{ copyHint }}</p>
-
-        <StatGrid :stats="stats" />
-
         <p v-if="error" class="inline-error">{{ error }}</p>
+
+        <div v-if="habits.length === 0" class="empty-habits">
+          <p>У группы пока нет общих привычек</p>
+          <PillButton v-if="isOwner" @click="handleAddHabit">Добавить привычку</PillButton>
+          <p v-else class="empty-hint">Владелец ещё не добавил ни одной</p>
+        </div>
+
+        <div v-else class="habits-list">
+          <div
+            v-for="habit in habits"
+            :key="habit.id"
+            class="habit-card"
+            @click="router.push(`/habits/${habit.id}`)"
+          >
+            <div class="habit-card-top">
+              <span class="habit-card-icon">{{ typeIcons[habit.habit_type] || '📝' }}</span>
+              <div class="habit-card-title-block">
+                <span class="habit-card-title">{{ habit.title }}</span>
+                <span v-if="doneCount(habit.id)" class="habit-card-meta">
+                  {{ doneCount(habit.id) }} отметилось сегодня
+                </span>
+              </div>
+              <span class="chevron">›</span>
+            </div>
+            <div class="habit-card-stats">
+              <span>🔥 {{ habit.current_streak }}</span>
+              <span>🙋 {{ habit.my_current_streak }}</span>
+            </div>
+            <PillButton
+              class="habit-card-check"
+              :variant="hasCheckedIn(habit.id) ? 'secondary' : 'primary'"
+              :disabled="hasCheckedIn(habit.id)"
+              :loading="checkingInId === habit.id"
+              @click.stop="handleCheckIn(habit.id)"
+            >
+              {{ hasCheckedIn(habit.id) ? 'Уже отмечено' : 'Отметить выполнение' }}
+            </PillButton>
+          </div>
+        </div>
 
         <GlassCard title="Участники" class="members-card">
           <div class="members-list">
@@ -271,27 +319,15 @@ onMounted(() => {
                 <span class="member-name">{{ member.username }}</span>
                 <span v-if="member.role === 'owner'" class="owner-badge">владелец</span>
               </div>
-              <div class="member-actions">
-                <span class="check-indicator">{{ isCheckedIn(member.user_id) ? '✅' : '⏳' }}</span>
-                <button
-                  v-if="isOwner && member.user_id !== group.owner_id"
-                  @click="handleRemoveMember(member)"
-                  class="remove-member-btn"
-                  title="Удалить участника"
-                >✕</button>
-              </div>
+              <button
+                v-if="isOwner && member.user_id !== group.owner_id"
+                @click="handleRemoveMember(member)"
+                class="remove-member-btn"
+                title="Удалить участника"
+              >✕</button>
             </div>
           </div>
         </GlassCard>
-
-        <PillButton
-          class="check-btn-wrap"
-          :variant="hasCheckedInToday ? 'secondary' : 'primary'"
-          :disabled="hasCheckedInToday"
-          @click="handleCheckIn"
-        >
-          {{ hasCheckedInToday ? '✅ Уже отмечено сегодня' : '🔥 Отметить выполнение' }}
-        </PillButton>
       </div>
     </div>
 
@@ -299,7 +335,7 @@ onMounted(() => {
       v-model="showDeleteModal"
       icon="🗑️"
       title="Расформировать группу?"
-      text="Это действие нельзя отменить. Группа, привычка и вся история отметок будут удалены навсегда для всех участников."
+      text="Это действие нельзя отменить. Группа, все её привычки и история отметок будут удалены навсегда для всех участников."
       confirm-label="Расформировать"
       danger
       @confirm="handleDelete"
@@ -309,7 +345,7 @@ onMounted(() => {
       v-model="showLeaveModal"
       icon="🚪"
       title="Покинуть группу?"
-      text="Вы больше не будете участвовать в общем стрике. Вернуться можно будет только по новому приглашению."
+      text="Ваши стрики по общим привычкам группы заморозятся. Вернуться можно будет только по новому приглашению, стрик начнётся заново."
       confirm-label="Покинуть"
       danger
       @confirm="handleLeave"
@@ -317,19 +353,10 @@ onMounted(() => {
 
     <div v-if="showSettingsModal" class="modal-overlay" @click="showSettingsModal = false">
       <div class="modal-content settings-modal" @click.stop>
-        <h3 class="modal-title">Настройки группы</h3>
+        <h3 class="modal-title">Переименовать группу</h3>
         <div class="settings-form">
           <label class="settings-label">Название группы</label>
           <input v-model="settingsForm.name" type="text" class="settings-input" maxlength="100">
-
-          <label class="settings-label">Название привычки</label>
-          <input v-model="settingsForm.habit_title" type="text" class="settings-input" maxlength="100">
-
-          <label class="settings-label">Описание</label>
-          <textarea v-model="settingsForm.habit_description" class="settings-input" rows="2" maxlength="300"></textarea>
-
-          <label class="settings-label">Прощений на пропуск</label>
-          <input v-model.number="settingsForm.allowed_misses" type="number" min="0" max="3" class="settings-input">
         </div>
         <div class="modal-actions">
           <button @click="showSettingsModal = false" class="modal-cancel">Отмена</button>
@@ -420,20 +447,12 @@ onMounted(() => {
   box-shadow: var(--shadow-sm);
 }
 
-.group-header {
-  margin-bottom: var(--space-5);
-}
-
-.habit-title {
-  font-size: 20px;
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
-.habit-description {
+.group-summary {
+  display: flex;
+  gap: var(--space-4);
   font-size: 14px;
-  color: var(--text-tertiary);
-  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-5);
 }
 
 .copy-hint {
@@ -450,6 +469,89 @@ onMounted(() => {
   color: var(--color-danger);
   font-size: 13px;
   margin: var(--space-4) 0;
+}
+
+.empty-habits {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-habits p {
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-4);
+}
+
+.empty-hint {
+  margin-bottom: 0 !important;
+  font-size: 13px;
+}
+
+.habits-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.habit-card {
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.habit-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.habit-card-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.habit-card-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.habit-card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.habit-card-meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.chevron {
+  color: var(--color-gray-light);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.habit-card-stats {
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-3) 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.habit-card-check {
+  width: 100%;
 }
 
 .members-card {
@@ -491,16 +593,6 @@ onMounted(() => {
   color: var(--text-tertiary);
 }
 
-.member-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.check-indicator {
-  font-size: 16px;
-}
-
 .remove-member-btn {
   width: 22px;
   height: 22px;
@@ -513,10 +605,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.check-btn-wrap {
-  margin-top: var(--space-6);
 }
 
 .modal-overlay {

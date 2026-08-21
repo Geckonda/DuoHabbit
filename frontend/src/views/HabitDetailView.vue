@@ -3,18 +3,25 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHabitsStore } from '../stores/habit'
+import { useGroupsStore } from '../stores/group'
+import { useUserStore } from '../stores/user'
 import AppHeader from '../components/AppHeader.vue'
 import ActionMenu from '../components/ActionMenu.vue'
 import ConfirmModal from '../components/ConfirmModal.vue'
 import StatGrid from '../components/StatGrid.vue'
 import GlassCard from '../components/GlassCard.vue'
+import PillButton from '../components/PillButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const habitsStore = useHabitsStore()
+const groupsStore = useGroupsStore()
+const userStore = useUserStore()
 
 const habitId = Number(route.params.id)
 const habit = ref(null)
+const groupMembers = ref([])
+const checkinStatus = ref(null)
 const isLoading = ref(true)
 const error = ref('')
 const showMenu = ref(false)
@@ -23,11 +30,36 @@ const showDeleteModal = ref(false)
 const typeIcons = { daily: '📅', weekdays: '💼', weekly: '📆', monthly: '📊' }
 const typeLabels = { daily: 'Ежедневно', weekdays: 'По будням', weekly: 'Еженедельно', monthly: 'Ежемесячно' }
 
-const stats = computed(() => [
-  { value: habit.value?.current_streak || 0, label: '🔥 Стрик' },
-  { value: habit.value?.total_checks || habit.value?.recent_checks?.length || 0, label: '✅ Выполнено' },
-  { value: habit.value?.is_private ? 'Личная' : 'Общая', label: '👁️ Видимость' }
-])
+const isGroupHabit = computed(() => !!habit.value?.group_id)
+const isCreator = computed(() =>
+  habit.value && userStore.user && habit.value.creator_id === userStore.user.id
+)
+const hasCheckedInToday = computed(() =>
+  checkinStatus.value?.checked_in_user_ids?.includes(userStore.user?.id)
+)
+
+const stats = computed(() => {
+  if (!habit.value) return []
+  if (isGroupHabit.value) {
+    return [
+      { value: habit.value.current_streak || 0, label: '🔥 Стрик команды' },
+      { value: habit.value.my_current_streak || 0, label: '🙋 Моя серия' },
+      { value: `${habit.value.my_misses_remaining ?? 0}/${habit.value.allowed_misses ?? 0}`, label: '🛡️ Прощений' }
+    ]
+  }
+  return [
+    { value: habit.value.current_streak || 0, label: '🔥 Стрик' },
+    { value: `${habit.value.my_misses_remaining ?? 0}/${habit.value.allowed_misses ?? 0}`, label: '🛡️ Прощений' },
+    { value: habit.value.is_private ? 'Личная' : 'Общая', label: '👁️ Видимость' }
+  ]
+})
+
+const memberStatus = computed(() =>
+  groupMembers.value.map(m => ({
+    ...m,
+    checkedIn: checkinStatus.value?.checked_in_user_ids?.includes(m.user_id)
+  }))
+)
 
 const loadHabit = async () => {
   isLoading.value = true
@@ -35,6 +67,11 @@ const loadHabit = async () => {
 
   try {
     habit.value = await habitsStore.fetchHabitById(habitId, true)
+    checkinStatus.value = await habitsStore.fetchCheckinStatus(habitId)
+
+    if (habit.value.group_id) {
+      groupMembers.value = await groupsStore.fetchMembers(habit.value.group_id)
+    }
   } catch (err) {
     error.value = 'Не удалось загрузить привычку'
     console.error(err)
@@ -68,7 +105,7 @@ const handleRestore = async () => {
 const handleDelete = async () => {
   try {
     await habitsStore.deleteHabit(habitId)
-    router.push('/')
+    router.push(isGroupHabit.value ? `/groups/${habit.value.group_id}` : '/')
   } catch (err) {
     error.value = 'Ошибка при удалении'
     showDeleteModal.value = false
@@ -102,7 +139,7 @@ onMounted(() => {
   <div class="screen">
     <AppHeader :title="habit?.title || 'Привычка'" fallback="/">
       <template #right>
-        <div class="menu-wrapper">
+        <div v-if="isCreator" class="menu-wrapper">
           <button class="menu-btn" @click="showMenu = !showMenu">•••</button>
           <ActionMenu v-model="showMenu">
             <button @click="handleEdit" class="menu-item">
@@ -144,6 +181,11 @@ onMounted(() => {
                 {{ habit.is_active ? 'Активна' : 'В архиве' }}
               </span>
               <span class="badge">{{ typeLabels[habit.habit_type] || habit.habit_type }}</span>
+              <router-link
+                v-if="isGroupHabit"
+                :to="`/groups/${habit.group_id}`"
+                class="badge group-badge"
+              >👥 Групповая</router-link>
             </div>
           </div>
         </div>
@@ -155,6 +197,17 @@ onMounted(() => {
         <div class="detail-sections">
           <GlassCard v-if="habit.description" title="Описание">
             <p class="description-text">{{ habit.description }}</p>
+          </GlassCard>
+
+          <GlassCard v-if="isGroupHabit" title="Кто сегодня отметился">
+            <div class="checks-list">
+              <div v-for="m in memberStatus" :key="m.id" class="check-item">
+                <span class="check-date">{{ m.username }}</span>
+                <span class="check-badge" :class="{ pending: !m.checkedIn }">
+                  {{ m.checkedIn ? 'Отметился' : 'Ждём' }}
+                </span>
+              </div>
+            </div>
           </GlassCard>
 
           <GlassCard title="Детали">
@@ -180,10 +233,15 @@ onMounted(() => {
           </GlassCard>
         </div>
 
-        <button v-if="habit.is_active" class="check-btn" @click="handleCheckIn">
-          <span class="check-icon">✅</span>
-          Отметить выполнение
-        </button>
+        <PillButton
+          v-if="habit.is_active"
+          class="check-btn-wrap"
+          :variant="hasCheckedInToday ? 'secondary' : 'primary'"
+          :disabled="hasCheckedInToday"
+          @click="handleCheckIn"
+        >
+          {{ hasCheckedInToday ? '✅ Уже отмечено сегодня' : '🔥 Отметить выполнение' }}
+        </PillButton>
       </div>
     </div>
 
@@ -297,6 +355,13 @@ onMounted(() => {
   color: #B25E00;
 }
 
+.group-badge {
+  text-decoration: none;
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
 .inline-error {
   color: var(--color-danger);
   font-size: 13px;
@@ -369,25 +434,12 @@ onMounted(() => {
   color: #248A3D;
 }
 
-.check-btn {
-  width: 100%;
-  padding: var(--space-4);
-  background: var(--color-accent);
-  border: none;
-  border-radius: var(--radius-lg);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  margin-top: var(--space-6);
+.check-badge.pending {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-tertiary);
 }
 
-.check-btn:active {
-  transform: scale(0.98);
+.check-btn-wrap {
+  margin-top: var(--space-6);
 }
 </style>

@@ -1,21 +1,21 @@
-"""Group repository."""
+"""Group repository: group and membership CRUD only. Habit state lives in repositories/habits.py."""
 
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from duohabit.models.groups import Group, GroupHabit, GroupHabitCheck, GroupMember
+from duohabit.models.groups import Group, GroupMember
 from duohabit.models.users import User
 from duohabit.schemas.common import PaginationParams
 from duohabit.utils.pagination import apply_pagination
 
 
 class GroupRepository:
-    """Repository for group, membership, group-habit and check operations."""
+    """Repository for group and membership operations."""
 
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -40,14 +40,14 @@ class GroupRepository:
         return group
 
     async def get_group_by_id(
-        self, group_id: int, load_members: bool = False, load_habit: bool = False
+        self, group_id: int, load_members: bool = False, load_habits: bool = False
     ) -> Group | None:
-        """Get a group by id, optionally eager-loading members and/or its habit."""
+        """Get a group by id, optionally eager-loading members and/or its habits."""
         stmt = select(Group).where(Group.id == group_id)
         if load_members:
             stmt = stmt.options(selectinload(Group.members))
-        if load_habit:
-            stmt = stmt.options(selectinload(Group.habit))
+        if load_habits:
+            stmt = stmt.options(selectinload(Group.habits))
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -94,7 +94,7 @@ class GroupRepository:
         return group
 
     async def delete_group(self, group: Group) -> None:
-        """Delete a group (cascades to members, habit, checks)."""
+        """Delete a group (cascades to members and habits)."""
         await self._session.delete(group)
         await self._session.flush()
 
@@ -153,18 +153,6 @@ class GroupRepository:
         result = await self._session.execute(stmt)
         return int(result.scalar_one())
 
-    async def get_active_member_ids_as_of(
-        self, group_id: int, as_of: datetime
-    ) -> list[int]:
-        """User ids that were active members of a group at a past point in time."""
-        stmt = select(GroupMember.user_id).where(
-            GroupMember.group_id == group_id,
-            GroupMember.created_at <= as_of,
-            or_(GroupMember.removed_at.is_(None), GroupMember.removed_at > as_of),
-        )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
-
     async def remove_member(
         self, member: GroupMember, removed_at: datetime
     ) -> GroupMember:
@@ -200,124 +188,3 @@ class GroupRepository:
         stmt = stmt.order_by(GroupMember.id)
         result = await self._session.execute(stmt)
         return list(result.tuples().all())
-
-    # ========== GROUP HABIT METHODS ==========
-
-    async def create_group_habit(
-        self,
-        group_id: int,
-        title: str,
-        description: str | None,
-        habit_type: str,
-        allowed_misses: int,
-        initial_period_key: str,
-    ) -> GroupHabit:
-        """Create the single shared habit for a group."""
-        group_habit = GroupHabit(
-            group_id=group_id,
-            title=title,
-            description=description,
-            habit_type=habit_type,
-            current_streak=0,
-            allowed_misses=allowed_misses,
-            misses_remaining=allowed_misses,
-            last_resolved_period_key=initial_period_key,
-            is_active=True,
-        )
-        self._session.add(group_habit)
-        await self._session.flush()
-        await self._session.refresh(group_habit)
-        return group_habit
-
-    async def get_group_habit_by_group(self, group_id: int) -> GroupHabit | None:
-        """Get the shared habit for a group."""
-        stmt = select(GroupHabit).where(GroupHabit.group_id == group_id)
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def update_group_habit(
-        self, group_habit: GroupHabit, **kwargs: Any
-    ) -> GroupHabit:
-        """Update group habit fields."""
-        kwargs.pop("group_id", None)
-        kwargs.pop("habit_type", None)
-        for key, value in kwargs.items():
-            if hasattr(group_habit, key):
-                setattr(group_habit, key, value)
-        await self._session.flush()
-        await self._session.refresh(group_habit)
-        return group_habit
-
-    # ========== CHECK METHODS ==========
-
-    async def create_group_habit_check(
-        self, group_habit_id: int, user_id: int, check_date: date, period_key: str
-    ) -> GroupHabitCheck:
-        """Record a member's check-in for a period."""
-        check = GroupHabitCheck(
-            group_habit_id=group_habit_id,
-            user_id=user_id,
-            check_date=check_date,
-            period_key=period_key,
-        )
-        self._session.add(check)
-        try:
-            await self._session.flush()
-        except IntegrityError as exc:
-            raise ValueError("Already checked in for this period") from exc
-        await self._session.refresh(check)
-        return check
-
-    async def get_check(
-        self, group_habit_id: int, user_id: int, period_key: str
-    ) -> GroupHabitCheck | None:
-        """Get a specific member's check for a period, if any."""
-        stmt = select(GroupHabitCheck).where(
-            GroupHabitCheck.group_habit_id == group_habit_id,
-            GroupHabitCheck.user_id == user_id,
-            GroupHabitCheck.period_key == period_key,
-        )
-        result = await self._session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def count_checks_for_period(
-        self, group_habit_id: int, period_key: str
-    ) -> int:
-        """Count distinct members who checked in for a period."""
-        stmt = (
-            select(func.count())
-            .select_from(GroupHabitCheck)
-            .where(
-                GroupHabitCheck.group_habit_id == group_habit_id,
-                GroupHabitCheck.period_key == period_key,
-            )
-        )
-        result = await self._session.execute(stmt)
-        return int(result.scalar_one())
-
-    async def get_checks_for_period(
-        self, group_habit_id: int, period_key: str
-    ) -> list[GroupHabitCheck]:
-        """Get all checks recorded for a period."""
-        stmt = select(GroupHabitCheck).where(
-            GroupHabitCheck.group_habit_id == group_habit_id,
-            GroupHabitCheck.period_key == period_key,
-        )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
-
-    async def get_checks_for_user(
-        self, group_habit_id: int, user_id: int, limit: int = 30
-    ) -> list[GroupHabitCheck]:
-        """Get a member's recent checks for the group habit."""
-        stmt = (
-            select(GroupHabitCheck)
-            .where(
-                GroupHabitCheck.group_habit_id == group_habit_id,
-                GroupHabitCheck.user_id == user_id,
-            )
-            .order_by(GroupHabitCheck.check_date.desc())
-            .limit(limit)
-        )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())

@@ -1,4 +1,4 @@
-"""Router-level tests for /groups: happy paths plus the AppError -> HTTP conversion."""
+"""Router-level tests for /groups and /habits: happy paths plus the AppError -> HTTP conversion."""
 
 import pytest
 from fastapi import FastAPI
@@ -15,42 +15,32 @@ async def test_create_group_endpoint_happy_path(
     owner = await make_user(db_session, "owner", "owner@test.com")
     as_user(app, owner.id)
 
-    response = await client.post(
-        "/groups",
-        json={
-            "name": "Утренняя пробежка",
-            "habit_title": "Бег",
-            "allowed_misses": 1,
-        },
-    )
+    response = await client.post("/groups", json={"name": "Утренняя пробежка"})
 
     assert response.status_code == 200
     body = response.json()
     assert body["owner_id"] == owner.id
     assert body["member_count"] == 1
-    assert body["habit"]["current_streak"] == 0
+    assert body["habits"] == []
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_create_group_endpoint_error_conversion(
+async def test_add_habit_to_group_endpoint_happy_path(
     app: FastAPI, client: AsyncClient, db_session: AsyncSession
 ) -> None:
     owner = await make_user(db_session, "owner", "owner@test.com")
     as_user(app, owner.id)
 
+    group_id = (await client.post("/groups", json={"name": "Group"})).json()["id"]
     response = await client.post(
-        "/groups",
-        json={
-            "name": "Group",
-            "habit_title": "Habit",
-            "habit_type": "weekly",
-            "allowed_misses": 0,
-        },
+        f"/groups/{group_id}/habits", json={"title": "Бег", "allowed_misses": 1}
     )
 
-    # ValidationAppError -> 400, not an unhandled 500.
-    assert response.status_code == 400
-    assert "detail" in response.json()
+    assert response.status_code == 200
+    body = response.json()
+    assert body["group_id"] == group_id
+    assert body["current_streak"] == 0
+    assert body["allowed_misses"] == 1
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -72,19 +62,17 @@ async def test_check_in_endpoint_happy_path(
     owner = await make_user(db_session, "owner", "owner@test.com")
     as_user(app, owner.id)
 
-    create_resp = await client.post(
-        "/groups",
-        json={"name": "Solo group", "habit_title": "Читать", "allowed_misses": 0},
-    )
-    group_id = create_resp.json()["id"]
+    group_id = (await client.post("/groups", json={"name": "Solo group"})).json()["id"]
+    habit_id = (
+        await client.post(f"/groups/{group_id}/habits", json={"title": "Читать"})
+    ).json()["id"]
 
-    check_resp = await client.post(f"/groups/{group_id}/check")
+    check_resp = await client.post(f"/habits/{habit_id}/check")
 
     assert check_resp.status_code == 200
     body = check_resp.json()
     assert body["checked"] is True
-    assert body["all_members_done"] is True  # owner is the only active member
-    assert body["current_streak"] == 1
+    assert body["current_streak"] == 1  # owner is the only active member -> MIN == 1
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -95,9 +83,7 @@ async def test_join_group_endpoint_happy_path(
     joiner = await make_user(db_session, "joiner", "joiner@test.com")
 
     as_user(app, owner.id)
-    create_resp = await client.post(
-        "/groups", json={"name": "Group", "habit_title": "Habit", "allowed_misses": 0}
-    )
+    create_resp = await client.post("/groups", json={"name": "Group"})
     invite_code = create_resp.json()["invite_code"]
 
     as_user(app, joiner.id)
@@ -105,3 +91,18 @@ async def test_join_group_endpoint_happy_path(
 
     assert join_resp.status_code == 200
     assert join_resp.json()["member_count"] == 2
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_create_personal_habit_endpoint_happy_path(
+    app: FastAPI, client: AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = await make_user(db_session, "owner", "owner@test.com")
+    as_user(app, owner.id)
+
+    response = await client.post("/habits", json={"title": "Читать книгу"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["group_id"] is None
+    assert body["current_streak"] == 0

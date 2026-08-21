@@ -37,9 +37,7 @@ class UsersRepository:
         """Commit the current transaction."""
         await self._session.commit()
 
-    async def get_users(
-        self, pagination: PaginationParams | None = None
-    ) -> list[User]:
+    async def get_users(self, pagination: PaginationParams | None = None) -> list[User]:
         """Get all users."""
         stmt = select(User).order_by(User.id)
 
@@ -69,3 +67,11 @@ class UsersRepository:
         stmt = select(User).where(User.email == email)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_timezones(self, user_ids: list[int]) -> dict[int, str]:
+        """Batch-fetch each user's IANA timezone, for per-member period reconciliation."""
+        if not user_ids:
+            return {}
+        stmt = select(User.id, User.timezone).where(User.id.in_(user_ids))
+        result = await self._session.execute(stmt)
+        return dict(result.tuples().all())

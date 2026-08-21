@@ -1,15 +1,11 @@
 <!-- views/HomeView.vue -->
 <script setup>
 import { onMounted, computed } from 'vue'
-import { useUserStore } from '../stores/user'
 import { useHabitsStore } from '../stores/habit'
-import { useGroupsStore } from '../stores/group'
 import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 
-const userStore = useUserStore()
 const habitsStore = useHabitsStore()
-const groupsStore = useGroupsStore()
 const router = useRouter()
 
 const habits = computed(() => habitsStore.activeHabits)
@@ -26,24 +22,8 @@ const handleAddHabit = () => {
   router.push('/habits/new')
 }
 
-const handleOpenChats = () => {
-  router.push('/chats')
-}
-
-const handleLogout = async () => {
-  await userStore.logout()
-  habitsStore.$reset()
-  groupsStore.$reset()
-  router.push('/login')
-}
-
 onMounted(() => {
   loadHabits()
-
-  // Диалоги нужны здесь только ради счетчика непрочитанных,
-  // сокет держит его свежим без перезагрузки страницы
-  chatStore.fetchConversations().catch(() => {})
-  chatStore.connectSocket()
 })
 </script>
 
@@ -52,7 +32,6 @@ onMounted(() => {
     <AppHeader title="Мои привычки" :show-back="false">
       <template #right>
         <button @click="handleAddHabit" class="add">+</button>
-        <button @click="handleLogout" class="logout">Выйти</button>
       </template>
     </AppHeader>
 
@@ -78,7 +57,10 @@ onMounted(() => {
         >
           <div>
             <div class="title">{{ habit.title }}</div>
-            <div v-if="habit.description" class="description">{{ habit.description }}</div>
+            <div class="meta">
+              <span v-if="habit.current_streak">🔥 {{ habit.current_streak }}</span>
+              <span v-if="habit.description" class="description">{{ habit.description }}</span>
+            </div>
           </div>
           <span class="chevron">›</span>
         </div>
@@ -104,58 +86,16 @@ onMounted(() => {
   padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + var(--space-4));
 }
 
-.add,
-.logout {
-  border: none;
-  cursor: pointer;
-  box-shadow: var(--shadow-sm);
-}
-
-.chats {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: #fff;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.chats .badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: #FF3B30;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .add {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-pill);
   background: var(--surface-card);
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
   font-size: 22px;
   color: var(--color-ios-blue);
-}
-
-.logout {
-  padding: 0 var(--space-4);
-  height: 36px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-card);
-  font-size: 14px;
-  color: var(--color-danger);
 }
 
 .loading {
@@ -227,7 +167,9 @@ onMounted(() => {
   margin-bottom: 4px;
 }
 
-.description {
+.meta {
+  display: flex;
+  gap: var(--space-3);
   font-size: 14px;
   color: var(--text-tertiary);
 }

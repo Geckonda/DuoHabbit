@@ -3,37 +3,48 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useHabitsStore } from '../stores/habit'
+import { useGroupsStore } from '../stores/group'
 import AppHeader from '../components/AppHeader.vue'
 import PillButton from '../components/PillButton.vue'
 
 const route = useRoute()
 const router = useRouter()
 const habitsStore = useHabitsStore()
+const groupsStore = useGroupsStore()
 
 const isEditMode = computed(() => !!route.params.id)
 const habitId = computed(() => Number(route.params.id))
+// Присутствует только на маршруте /groups/:groupId/habits/new
+const groupId = computed(() => route.params.groupId ? Number(route.params.groupId) : null)
 
-const habitTypes = [
-  { value: 'daily', label: 'Ежедневно', icon: '📅' },
-  { value: 'weekdays', label: 'По будням', icon: '💼' },
-  { value: 'weekly', label: 'Еженедельно', icon: '📆' },
-  { value: 'monthly', label: 'Ежемесячно', icon: '📊' }
+const missOptions = [
+  { value: 0, label: 'Без прощений', icon: '🎯' },
+  { value: 1, label: '1 прощение', icon: '🙏' },
+  { value: 2, label: '2 прощения', icon: '🤝' },
+  { value: 3, label: '3 прощения', icon: '💚' }
 ]
 
 const formData = ref({
   title: '',
   description: '',
   habit_type: 'daily',
-  is_private: true
+  is_private: true,
+  allowed_misses: 0
 })
 
 const isLoading = ref(false)
 const isFetching = ref(false)
 const error = ref('')
 
-const pageTitle = computed(() => isEditMode.value ? 'Редактировать привычку' : 'Новая привычка')
+const pageTitle = computed(() => {
+  if (isEditMode.value) return 'Редактировать привычку'
+  return groupId.value ? 'Общая привычка' : 'Новая привычка'
+})
 const submitLabel = computed(() => isEditMode.value ? 'Сохранить' : 'Создать привычку')
-const backFallback = computed(() => isEditMode.value ? `/habits/${habitId.value}` : '/')
+const backFallback = computed(() => {
+  if (isEditMode.value) return `/habits/${habitId.value}`
+  return groupId.value ? `/groups/${groupId.value}` : '/'
+})
 
 const loadForEdit = async () => {
   isFetching.value = true
@@ -43,7 +54,8 @@ const loadForEdit = async () => {
       title: habit.title,
       description: habit.description || '',
       habit_type: habit.habit_type,
-      is_private: habit.is_private
+      is_private: habit.is_private,
+      allowed_misses: habit.allowed_misses ?? 0
     }
   } catch (err) {
     error.value = 'Не удалось загрузить привычку'
@@ -66,6 +78,9 @@ const handleSubmit = async () => {
     if (isEditMode.value) {
       await habitsStore.updateHabit(habitId.value, formData.value)
       router.push(`/habits/${habitId.value}`)
+    } else if (groupId.value) {
+      const habit = await groupsStore.addHabitToGroup(groupId.value, formData.value)
+      router.push(`/habits/${habit.id}`)
     } else {
       await habitsStore.createHabit(formData.value)
       router.push('/')
@@ -118,25 +133,7 @@ onMounted(() => {
           ></textarea>
         </div>
 
-        <div class="input-group">
-          <label class="input-label">Периодичность</label>
-          <div class="type-grid">
-            <button
-              v-for="type in habitTypes"
-              :key="type.value"
-              type="button"
-              class="type-option"
-              :class="{ active: formData.habit_type === type.value }"
-              @click="formData.habit_type = type.value"
-              :disabled="isLoading"
-            >
-              <span class="type-icon">{{ type.icon }}</span>
-              <span class="type-label">{{ type.label }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="privacy-group">
+        <div v-if="!groupId" class="privacy-group">
           <label class="privacy-option">
             <input type="radio" v-model="formData.is_private" :value="true" :disabled="isLoading">
             <span class="privacy-content">
@@ -158,6 +155,28 @@ onMounted(() => {
               </span>
             </span>
           </label>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">
+            Прощения на пропуск
+            <span class="optional">{{ groupId ? '(у каждого участника свой запас)' : '' }}</span>
+          </label>
+          <div class="type-grid">
+            <button
+              v-for="option in missOptions"
+              :key="option.value"
+              type="button"
+              class="type-option"
+              :class="{ active: formData.allowed_misses === option.value }"
+              @click="formData.allowed_misses = option.value"
+              :disabled="isLoading"
+            >
+              <span class="type-icon">{{ option.icon }}</span>
+              <span class="type-label">{{ option.label }}</span>
+            </button>
+          </div>
+          <span class="hint-text">Если пропустишь день, вместо сброса стрика потратится прощение</span>
         </div>
 
         <p v-if="error" class="error-message">{{ error }}</p>
@@ -259,6 +278,14 @@ textarea.text-input {
 .type-label {
   font-size: 14px;
   font-weight: 500;
+}
+
+.hint-text {
+  display: block;
+  margin-top: var(--space-3);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
 }
 
 .privacy-group {
