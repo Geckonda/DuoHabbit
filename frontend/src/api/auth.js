@@ -16,7 +16,7 @@ export const auth = {
   
   async register(userData) {
     // userData должен соответствовать UserCreate из бекенда
-    const response = await api.post('/users', {
+    const response = await api.post('/users/', {
       email: userData.email,
       username: userData.username,
       password: userData.password,
