@@ -53,6 +53,7 @@
   --z-tabbar: 100;
   --z-dropdown: 200;
   --z-modal: 1000;
+  --z-toast: 1100;
 
   color-scheme: light;
   font-family: var(--font-family);

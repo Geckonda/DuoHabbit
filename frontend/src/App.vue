@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useUserStore } from './stores/user'
 import LoaderScreen from './components/LoaderScreen.vue'
 import AppShell from './components/AppShell.vue'
+import InAppToast from './components/InAppToast.vue'
 
 const userStore = useUserStore()
 const showSplash = ref(true)
@@ -42,6 +43,7 @@ onMounted(async () => {
   />
   
   <AppShell v-else />
+  <InAppToast />
 </template>
 
 <style>
