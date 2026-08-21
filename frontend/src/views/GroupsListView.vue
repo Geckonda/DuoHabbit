@@ -12,7 +12,9 @@ const groupsList = computed(() => groupsStore.groupsList)
 
 const loadGroups = async () => {
   try {
-    await groupsStore.fetchGroups(true)
+    // force=true: 5-минутный кэш иначе прячет свежее членство (тебя одобрили,
+    // а список групп ещё "помнит" старое состояние) при каждом заходе на вкладку
+    await groupsStore.fetchGroups(true, true)
   } catch (err) {
     console.error('Ошибка загрузки групп:', err)
   }
