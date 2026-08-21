@@ -31,6 +31,13 @@ const companionName = computed(
   () => conversation.value?.companion?.username || 'Диалог'
 )
 
+const isPending = computed(() => conversation.value?.status === 'pending')
+const isInitiator = computed(
+  () => conversation.value?.initiator_id === userStore.user?.id
+)
+const isRequestActionLoading = ref(false)
+const requestError = ref(null)
+
 const isOwn = (message) => message.sender_id === userStore.user?.id
 
 const formatTime = (isoString) =>
@@ -83,6 +90,30 @@ const handleSend = async () => {
     sendError.value = err.response?.data?.detail || 'Не удалось отправить'
   } finally {
     isSending.value = false
+  }
+}
+
+const handleAccept = async () => {
+  isRequestActionLoading.value = true
+  requestError.value = null
+  try {
+    await chatStore.acceptRequest(conversationId.value)
+  } catch (err) {
+    requestError.value = err.response?.data?.detail || 'Не удалось принять запрос'
+  } finally {
+    isRequestActionLoading.value = false
+  }
+}
+
+const handleDecline = async () => {
+  isRequestActionLoading.value = true
+  requestError.value = null
+  try {
+    await chatStore.declineRequest(conversationId.value)
+    router.push('/chats')
+  } catch (err) {
+    requestError.value = err.response?.data?.detail || 'Не удалось отклонить запрос'
+    isRequestActionLoading.value = false
   }
 }
 
@@ -149,7 +180,25 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="composer">
+    <div v-if="isPending && !isInitiator" class="request-bar">
+      <p v-if="requestError" class="send-error">{{ requestError }}</p>
+      <p class="request-hint">{{ companionName }} хочет тебе написать</p>
+      <div class="request-actions">
+        <button
+          class="request-decline"
+          :disabled="isRequestActionLoading"
+          @click="handleDecline"
+        >Отклонить</button>
+        <button
+          class="request-accept"
+          :disabled="isRequestActionLoading"
+          @click="handleAccept"
+        >Принять</button>
+      </div>
+    </div>
+
+    <div v-else class="composer">
+      <p v-if="isPending" class="pending-hint">Ждём ответа от {{ companionName }}</p>
       <p v-if="sendError" class="send-error">{{ sendError }}</p>
       <form class="composer-row" @submit.prevent="handleSend">
         <input
@@ -304,6 +353,61 @@ onUnmounted(() => {
   font-size: 13px;
   margin-bottom: 8px;
   text-align: center;
+}
+
+.pending-hint {
+  color: #8E8E93;
+  font-size: 13px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.request-bar {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 16px;
+  text-align: center;
+}
+
+.request-hint {
+  color: #3C3C43;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.request-actions {
+  display: flex;
+  gap: 10px;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.request-actions button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 16px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.request-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.request-decline {
+  background: rgba(0, 0, 0, 0.06);
+  color: #3C3C43;
+}
+
+.request-accept {
+  background: #007AFF;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0,122,255,0.3);
 }
 
 .composer-row {

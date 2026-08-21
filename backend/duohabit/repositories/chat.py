@@ -67,17 +67,33 @@ class ChatRepository:
 
         return await self.get_conversation(conversation_id)
 
-    async def create_conversation(self, user_ids: list[int]) -> Conversation:
-        """Create a conversation with the given participants."""
+    async def create_conversation(
+        self, user_ids: list[int], initiator_id: int
+    ) -> Conversation:
+        """Create a conversation with the given participants, starting out pending."""
         conversation = Conversation(
+            status="pending",
+            initiator_id=initiator_id,
             participants=[
                 ConversationParticipant(user_id=user_id) for user_id in user_ids
-            ]
+            ],
         )
         self._session.add(conversation)
         await self._session.flush()
         await self._session.refresh(conversation, attribute_names=["participants"])
         return conversation
+
+    async def accept_conversation(self, conversation: Conversation) -> Conversation:
+        """Accept a pending request - both sides can message freely from here on."""
+        conversation.status = "accepted"
+        await self._session.flush()
+        await self._session.refresh(conversation)
+        return conversation
+
+    async def delete_conversation(self, conversation: Conversation) -> None:
+        """Decline a pending request - the whole conversation (and its messages) is gone."""
+        await self._session.delete(conversation)
+        await self._session.flush()
 
     async def list_conversations(
         self, user_id: int, pagination: PaginationParams | None = None

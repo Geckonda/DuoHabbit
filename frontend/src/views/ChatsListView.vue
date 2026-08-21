@@ -15,7 +15,8 @@ const userList = ref([])
 const isPickerLoading = ref(false)
 const pickerError = ref(null)
 
-const conversations = computed(() => chatStore.conversations)
+const activeConversations = computed(() => chatStore.activeConversations)
+const pendingRequests = computed(() => chatStore.pendingRequests)
 
 // Себе писать нельзя, бэкенд такой диалог не откроет
 const availableUsers = computed(() =>
@@ -56,6 +57,7 @@ const startConversation = async (userId) => {
 }
 
 const preview = (conversation) => {
+  if (conversation.status === 'pending') return 'Ожидает ответа'
   if (!conversation.last_message) return 'Нет сообщений'
   const text = conversation.last_message.text
   return text.length > 60 ? `${text.slice(0, 60)}…` : text
@@ -76,7 +78,10 @@ onMounted(() => {
     </AppHeader>
 
     <div class="content">
-      <div v-if="chatStore.isLoading && conversations.length === 0" class="loading">
+      <div
+        v-if="chatStore.isLoading && activeConversations.length === 0 && pendingRequests.length === 0"
+        class="loading"
+      >
         Загрузка...
       </div>
 
@@ -85,27 +90,47 @@ onMounted(() => {
         <button @click="loadConversations">Повторить</button>
       </div>
 
-      <div v-else-if="conversations.length === 0" class="empty">
-        <p>Пока нет диалогов</p>
-        <button @click="openPicker">Написать кому-нибудь</button>
-      </div>
-
-      <div v-else class="list">
-        <div
-          v-for="conversation in conversations"
-          :key="conversation.id"
-          class="item"
-          @click="router.push(`/chats/${conversation.id}`)"
-        >
-          <div class="item-body">
-            <div class="title">{{ conversation.companion.username }}</div>
-            <div class="description">{{ preview(conversation) }}</div>
+      <template v-else>
+        <div v-if="pendingRequests.length > 0" class="section">
+          <div class="section-title">Запросы</div>
+          <div class="list">
+            <div
+              v-for="conversation in pendingRequests"
+              :key="conversation.id"
+              class="item"
+              @click="router.push(`/chats/${conversation.id}`)"
+            >
+              <div class="item-body">
+                <div class="title">{{ conversation.companion.username }}</div>
+                <div class="description">Хочет тебе написать</div>
+              </div>
+              <span class="badge">1</span>
+            </div>
           </div>
-          <span v-if="conversation.unread_count > 0" class="badge">
-            {{ conversation.unread_count }}
-          </span>
         </div>
-      </div>
+
+        <div v-if="activeConversations.length === 0 && pendingRequests.length === 0" class="empty">
+          <p>Пока нет диалогов</p>
+          <button @click="openPicker">Написать кому-нибудь</button>
+        </div>
+
+        <div v-else-if="activeConversations.length > 0" class="list">
+          <div
+            v-for="conversation in activeConversations"
+            :key="conversation.id"
+            class="item"
+            @click="router.push(`/chats/${conversation.id}`)"
+          >
+            <div class="item-body">
+              <div class="title">{{ conversation.companion.username }}</div>
+              <div class="description">{{ preview(conversation) }}</div>
+            </div>
+            <span v-if="conversation.unread_count > 0" class="badge">
+              {{ conversation.unread_count }}
+            </span>
+          </div>
+        </div>
+      </template>
     </div>
 
     <!-- Выбор собеседника -->
@@ -209,6 +234,20 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
   box-shadow: var(--shadow-md);
+}
+
+.section {
+  margin-bottom: var(--space-5);
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: var(--space-2);
+  padding: 0 var(--space-1);
 }
 
 .list {

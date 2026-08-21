@@ -23,4 +23,12 @@ export const chat = {
   // Пометить прочитанным до сообщения
   markRead: (conversationId, messageId) =>
     api.post(`/chat/conversations/${conversationId}/read`, { message_id: messageId }),
+
+  // Принять запрос на переписку - после этого можно отвечать
+  acceptRequest: (conversationId) =>
+    api.post(`/chat/conversations/${conversationId}/accept`),
+
+  // Отклонить - диалог целиком пропадает у обеих сторон
+  declineRequest: (conversationId) =>
+    api.post(`/chat/conversations/${conversationId}/decline`),
 }

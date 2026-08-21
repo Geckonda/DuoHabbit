@@ -51,6 +51,8 @@ def conversation_model_to_schema(
             message_model_to_schema(last_message) if last_message is not None else None
         ),
         unread_count=unread_count,
+        status=conversation_model.status,
+        initiator_id=conversation_model.initiator_id,
     )
 
 
@@ -94,7 +96,9 @@ async def open_direct_conversation(
     conversation = await repo.get_direct_conversation(user_id, companion_id)
 
     if conversation is None:
-        conversation = await repo.create_conversation([user_id, companion_id])
+        conversation = await repo.create_conversation(
+            [user_id, companion_id], initiator_id=user_id
+        )
         await repo.commit()
         return conversation_model_to_schema(conversation, companion)
 
@@ -186,6 +190,11 @@ async def send_message(
     """
     conversation = await _get_conversation_for_user(repo, conversation_id, user_id)
 
+    if conversation.status == "pending" and conversation.initiator_id != user_id:
+        # Пока не принято, отвечать может только тот, кто открыл диалог -
+        # получатель пока может только читать
+        raise ChatValidationError("Accept the request before replying")
+
     text = message_data.text.strip()
     if not text:
         raise ChatValidationError("Message text cannot be empty")
@@ -193,9 +202,55 @@ async def send_message(
     message = await repo.create_message(conversation, sender_id=user_id, text=text)
     await repo.commit()
 
-    recipient_ids = [participant.user_id for participant in conversation.participants]
+    # Пока pending, доставка идет только самому отправителю (синхронизация его
+    # вкладок) - собеседник ничего не увидит и не получит пуш, пока не примет
+    recipient_ids = (
+        [participant.user_id for participant in conversation.participants]
+        if conversation.status == "accepted"
+        else [user_id]
+    )
 
     return message_model_to_schema(message), recipient_ids
+
+
+async def accept_conversation(
+    repo: ChatRepository,
+    users_repo: UsersRepository,
+    conversation_id: int,
+    user_id: int,
+) -> ConversationRead:
+    """Accept a pending request - both sides can message freely from here on."""
+    conversation = await _get_conversation_for_user(repo, conversation_id, user_id)
+
+    if conversation.status != "pending":
+        raise ChatValidationError("Conversation is not pending")
+    if conversation.initiator_id == user_id:
+        raise ChatValidationError("Cannot accept your own request")
+
+    companion_id = _companion_id(conversation, user_id)
+    companion = await users_repo.get_user(companion_id) if companion_id else None
+    if companion is None:
+        raise ChatNotFoundError("User not found")
+
+    await repo.accept_conversation(conversation)
+    await repo.commit()
+
+    return conversation_model_to_schema(conversation, companion)
+
+
+async def decline_conversation(
+    repo: ChatRepository, conversation_id: int, user_id: int
+) -> None:
+    """Decline a pending request - the whole conversation disappears for both sides."""
+    conversation = await _get_conversation_for_user(repo, conversation_id, user_id)
+
+    if conversation.status != "pending":
+        raise ChatValidationError("Conversation is not pending")
+    if conversation.initiator_id == user_id:
+        raise ChatValidationError("Cannot decline your own request")
+
+    await repo.delete_conversation(conversation)
+    await repo.commit()
 
 
 async def mark_read(

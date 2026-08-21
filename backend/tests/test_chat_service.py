@@ -6,6 +6,8 @@ from duohabit.schemas.chat import MessageCreate
 from duohabit.services.chat import (
     ChatNotFoundError,
     ChatValidationError,
+    accept_conversation,
+    decline_conversation,
     get_messages,
     list_conversations,
     mark_read,
@@ -40,10 +42,11 @@ def build_repos() -> tuple[FakeChatRepository, FakeUsersRepository]:
 async def seed_conversation(
     chat: FakeChatRepository, users: FakeUsersRepository
 ) -> int:
-    """Open a dialog between alice and bob, return its id."""
+    """Open a dialog between alice and bob, already accepted, return its id."""
     conversation = await open_direct_conversation(
         as_chat_repo(chat), as_users_repo(users), ALICE, BOB
     )
+    await accept_conversation(as_chat_repo(chat), as_users_repo(users), conversation.id, BOB)
     return conversation.id
 
 
@@ -62,6 +65,8 @@ async def test_open_conversation_creates_and_commits() -> None:
     assert conversation.companion.username == "bob"
     assert conversation.unread_count == 0
     assert conversation.last_message is None
+    assert conversation.status == "pending"
+    assert conversation.initiator_id == ALICE
     assert chat.commits == 1
 
 
@@ -337,6 +342,132 @@ async def test_send_message_from_outsider_is_rejected() -> None:
     assert not chat.messages
 
 
+# ========== REQUESTS (ACCEPT/DECLINE) ==========
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_recipient_cannot_reply_before_accepting() -> None:
+    """The invitee can only read a pending request, not answer it."""
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    with pytest.raises(ChatValidationError):
+        await send_message(
+            as_chat_repo(chat), BOB, conversation.id, MessageCreate(text="привет")
+        )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_initiator_can_keep_writing_while_pending() -> None:
+    """The one who opened the dialog isn't blocked while waiting for a response."""
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    message, recipients = await send_message(
+        as_chat_repo(chat), ALICE, conversation.id, MessageCreate(text="привет")
+    )
+
+    assert message.text == "привет"
+    # Получателю пока ничего не летит - только собственные вкладки отправителя
+    assert recipients == [ALICE]
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_accept_conversation_lets_both_sides_message() -> None:
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    accepted = await accept_conversation(
+        as_chat_repo(chat), as_users_repo(users), conversation.id, BOB
+    )
+    assert accepted.status == "accepted"
+
+    _, recipients = await send_message(
+        as_chat_repo(chat), BOB, conversation.id, MessageCreate(text="привет и тебе")
+    )
+    assert set(recipients) == {ALICE, BOB}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_accept_own_request_is_rejected() -> None:
+    """The initiator can't accept their own request."""
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    with pytest.raises(ChatValidationError):
+        await accept_conversation(
+            as_chat_repo(chat), as_users_repo(users), conversation.id, ALICE
+        )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decline_conversation_removes_it_entirely() -> None:
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+    await send_message(
+        as_chat_repo(chat), ALICE, conversation.id, MessageCreate(text="привет")
+    )
+
+    await decline_conversation(as_chat_repo(chat), conversation.id, BOB)
+
+    assert await chat.get_conversation(conversation.id) is None
+    assert not chat.messages
+
+    # Ничто не мешает открыть диалог заново с чистого листа
+    reopened = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+    assert reopened.id != conversation.id
+    assert reopened.status == "pending"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_decline_own_request_is_rejected() -> None:
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    with pytest.raises(ChatValidationError):
+        await decline_conversation(as_chat_repo(chat), conversation.id, ALICE)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_accept_and_decline_from_outsider_is_rejected() -> None:
+    chat, users = build_repos()
+    conversation = await open_direct_conversation(
+        as_chat_repo(chat), as_users_repo(users), ALICE, BOB
+    )
+
+    with pytest.raises(ChatNotFoundError):
+        await accept_conversation(
+            as_chat_repo(chat), as_users_repo(users), conversation.id, EVE
+        )
+    with pytest.raises(ChatNotFoundError):
+        await decline_conversation(as_chat_repo(chat), conversation.id, EVE)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_accept_already_accepted_conversation_is_rejected() -> None:
+    chat, users = build_repos()
+    conversation_id = await seed_conversation(chat, users)  # уже accepted
+
+    with pytest.raises(ChatValidationError):
+        await accept_conversation(
+            as_chat_repo(chat), as_users_repo(users), conversation_id, BOB
+        )
+
+
 # ========== READ MARKS ==========
 
 
@@ -394,7 +525,7 @@ async def test_mark_read_rejects_foreign_message() -> None:
         as_chat_repo(chat), BOB, conversation_id, MessageCreate(text="непрочитанное")
     )
     foreign, _ = await send_message(
-        as_chat_repo(chat), EVE, other.id, MessageCreate(text="из другого диалога")
+        as_chat_repo(chat), ALICE, other.id, MessageCreate(text="из другого диалога")
     )
 
     with pytest.raises(ChatValidationError):

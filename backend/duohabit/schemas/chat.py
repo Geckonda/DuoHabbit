@@ -36,6 +36,8 @@ class ConversationRead(BaseModel):
     companion: UserOut
     last_message: MessageRead | None = None
     unread_count: int = 0
+    status: str
+    initiator_id: int
 
 
 class MarkReadRequest(BaseModel):

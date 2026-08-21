@@ -31,13 +31,15 @@ from duohabit.schemas.common import PaginationParams
 from duohabit.services.chat import (
     ChatError,
     ChatValidationError,
+    accept_conversation,
+    decline_conversation,
     get_messages,
     list_conversations,
     mark_read,
     open_direct_conversation,
     send_message,
 )
-from duohabit.services.notifications import NotificationPayload, notify
+from duohabit.services.notifications import NotificationPayload, notify, notify_if_offline
 from duohabit.services.users import UserManager
 
 MESSAGE_PREVIEW_LIMIT = 120
@@ -168,6 +170,55 @@ async def send_message_endpoint(
         )
 
     return message
+
+
+@chat_router.post("/conversations/{conversation_id}/accept", response_model=ConversationRead)
+async def accept_conversation_endpoint(
+    conversation_id: int,
+    session: AsyncSession = Depends(get_session),
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> ConversationRead:
+    """Accept a pending chat request - both sides can message freely from here on."""
+    try:
+        result = await accept_conversation(
+            repo=ChatRepository(session),
+            users_repo=UsersRepository(session),
+            conversation_id=conversation_id,
+            user_id=token_claim.user_id,
+        )
+    except ChatError as error:
+        raise _http_error(error) from error
+
+    acceptor = await UsersRepository(session).get_user(token_claim.user_id)
+    await notify_if_offline(
+        session,
+        [result.initiator_id],
+        NotificationPayload(
+            title="Запрос принят",
+            body=f"{acceptor.username if acceptor else 'Собеседник'} принял твой запрос на переписку",
+            url=f"/chats/{conversation_id}",
+            tag=f"chat-accepted-{conversation_id}",
+        ),
+    )
+
+    return result
+
+
+@chat_router.post("/conversations/{conversation_id}/decline", status_code=204)
+async def decline_conversation_endpoint(
+    conversation_id: int,
+    session: AsyncSession = Depends(get_session),
+    token_claim: AccessTokenClaim = Depends(get_token_claim),
+) -> None:
+    """Decline a pending chat request - the whole conversation is gone for both sides."""
+    try:
+        await decline_conversation(
+            repo=ChatRepository(session),
+            conversation_id=conversation_id,
+            user_id=token_claim.user_id,
+        )
+    except ChatError as error:
+        raise _http_error(error) from error
 
 
 @chat_router.post("/conversations/{conversation_id}/read", status_code=204)

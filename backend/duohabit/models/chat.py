@@ -25,6 +25,13 @@ class Conversation(TimestampMixin, Base):
         DateTime(timezone=True), index=True
     )
 
+    # Новый диалог начинается pending - собеседник может читать, но не отвечать,
+    # пока не примет (см. services/chat.py: accept_conversation/decline_conversation)
+    status: Mapped[str] = mapped_column(String(20), default="accepted", nullable=False)
+    initiator_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+
     participants: Mapped[list["ConversationParticipant"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"
     )
