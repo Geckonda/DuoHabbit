@@ -13,7 +13,7 @@ services:
       POSTGRES_PASSWORD: duohabit_password  # В продакшене использовать secrets!
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"  # Хост:контейнер
+      - "127.0.0.1:5433:5432"  # Только localhost, снаружи не нужен
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
@@ -57,9 +57,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
     container_name: duohabit-frontend
     ports:
-      - "3000:3000"
+      # Как и backend, доступен только на localhost - наружу отдаёт nginx
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
     networks:

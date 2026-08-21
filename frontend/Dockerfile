@@ -7,6 +7,10 @@ RUN npm install --legacy-peer-deps
 
 COPY . .
 
+# Адрес backend'а, зашивается в статику на этапе сборки (Vite читает VITE_-переменные из окружения)
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=$VITE_API_URL
+
 #Собираем проект
 RUN npm run build
 
