@@ -17,7 +17,6 @@ from duohabit.db import get_session
 from duohabit.models.auth import AccessToken
 from duohabit.models.users import User
 from duohabit.repositories.chat import ChatRepository
-from duohabit.repositories.push import PushRepository
 from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.auth import AccessTokenClaim
 from duohabit.schemas.chat import (
@@ -39,7 +38,7 @@ from duohabit.services.chat import (
     open_direct_conversation,
     send_message,
 )
-from duohabit.services.notifications import NotificationPayload, notify, notify_if_offline
+from duohabit.services.notifications import NotificationPayload, notify_if_offline
 from duohabit.services.users import UserManager
 
 MESSAGE_PREVIEW_LIMIT = 120
@@ -145,29 +144,24 @@ async def send_message_endpoint(
         },
     )
 
-    # Пуш только тем, кто не онлайн - иначе дублирующее уведомление при открытом чате
-    offline_recipients = [
-        recipient_id
-        for recipient_id in recipient_ids
-        if recipient_id != token_claim.user_id and not hub.is_online(recipient_id)
-    ]
-    if offline_recipients:
-        sender = await UsersRepository(session).get_user(token_claim.user_id)
-        preview = (
-            message.text
-            if len(message.text) <= MESSAGE_PREVIEW_LIMIT
-            else message.text[: MESSAGE_PREVIEW_LIMIT - 3] + "..."
-        )
-        await notify(
-            PushRepository(session),
-            offline_recipients,
-            NotificationPayload(
-                title=sender.username if sender else "DuoHabit",
-                body=preview,
-                url=f"/chats/{conversation_id}",
-                tag=f"chat-{conversation_id}",
-            ),
-        )
+    sender = await UsersRepository(session).get_user(token_claim.user_id)
+    preview = (
+        message.text
+        if len(message.text) <= MESSAGE_PREVIEW_LIMIT
+        else message.text[: MESSAGE_PREVIEW_LIMIT - 3] + "..."
+    )
+    # Себя из адресатов исключаем явно: notify_if_offline судит по hub.is_online(),
+    # а не по тому, кто прислал этот самый запрос - живого сокета может не быть
+    await notify_if_offline(
+        session,
+        [recipient_id for recipient_id in recipient_ids if recipient_id != token_claim.user_id],
+        NotificationPayload(
+            title=sender.username if sender else "DuoHabit",
+            body=preview,
+            url=f"/chats/{conversation_id}",
+            tag=f"chat-{conversation_id}",
+        ),
+    )
 
     return message
 
@@ -188,6 +182,16 @@ async def accept_conversation_endpoint(
         )
     except ChatError as error:
         raise _http_error(error) from error
+
+    # Живым вкладкам обеих сторон - иначе у инициатора статус "Ожидает ответа"
+    # зависает, пока он не перезайдет вручную
+    await hub.broadcast(
+        [result.initiator_id, token_claim.user_id],
+        {
+            "type": "conversation_accepted",
+            "conversation": result.model_dump(mode="json"),
+        },
+    )
 
     acceptor = await UsersRepository(session).get_user(token_claim.user_id)
     await notify_if_offline(
@@ -212,13 +216,18 @@ async def decline_conversation_endpoint(
 ) -> None:
     """Decline a pending chat request - the whole conversation is gone for both sides."""
     try:
-        await decline_conversation(
+        initiator_id = await decline_conversation(
             repo=ChatRepository(session),
             conversation_id=conversation_id,
             user_id=token_claim.user_id,
         )
     except ChatError as error:
         raise _http_error(error) from error
+
+    await hub.broadcast(
+        [initiator_id, token_claim.user_id],
+        {"type": "conversation_declined", "conversation_id": conversation_id},
+    )
 
 
 @chat_router.post("/conversations/{conversation_id}/read", status_code=204)

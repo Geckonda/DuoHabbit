@@ -181,10 +181,18 @@ const handleAddMember = async (user) => {
     // Приглашение, не мгновенное членство - участники/привычки не меняются,
     // пока юзер сам не примет приглашение
     await groupsStore.addMember(groupId, user.id)
+    // Не активный участник, поэтому из filteredUsers сам не пропадет - убираем
+    // руками, иначе пикер тут же предложит пригласить его повторно
+    allUsers.value = allUsers.value.filter((u) => u.id !== user.id)
     showAddMemberModal.value = false
     copyHint.value = `Приглашение отправлено: ${user.username}`
     setTimeout(() => { copyHint.value = '' }, 2500)
   } catch (err) {
+    // Уже приглашен (кем-то еще, или до того как открыли этот список) - тоже
+    // прячем из пикера вместо того чтобы просто показать ошибку
+    if (err.response?.status === 409) {
+      allUsers.value = allUsers.value.filter((u) => u.id !== user.id)
+    }
     error.value = err.response?.data?.detail || 'Ошибка приглашения участника'
   }
 }

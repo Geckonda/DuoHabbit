@@ -123,6 +123,13 @@ watch(
   () => scrollToBottom()
 )
 
+// Собеседник отклонил запрос, пока диалог открыт у нас - его тут больше нет
+watch(conversation, (value, oldValue) => {
+  if (oldValue && !value) {
+    router.push('/chats')
+  }
+})
+
 onMounted(async () => {
   chatStore.setActiveConversation(conversationId.value)
   chatStore.connectSocket()

@@ -307,6 +307,26 @@ def _require_not_already_pending_or_member(existing_member: GroupMember | None) 
         raise ConflictError("Membership is already pending")
 
 
+async def _create_or_reset_pending(
+    repo: GroupRepository,
+    group_id: int,
+    user_id: int,
+    role: str,
+    join_method: str,
+    existing_member: GroupMember | None,
+) -> GroupMember:
+    """Shared by join_group_by_code/add_member: start (or restart) a pending row."""
+    if existing_member:
+        return await repo.reset_to_pending(existing_member, join_method)
+    try:
+        return await repo.create_pending_member(group_id, user_id, role, join_method)
+    except ValueError as exc:
+        # Two concurrent requests for the same pair can both pass the pre-check
+        # above and race on the unique constraint - the loser gets a proper
+        # ConflictError instead of an opaque 400 from the repo's plain ValueError
+        raise ConflictError("Membership is already pending") from exc
+
+
 async def join_group_by_code(
     repo: GroupRepository,
     user_id: int,
@@ -328,12 +348,10 @@ async def join_group_by_code(
     if active_count >= MAX_MEMBERS:
         raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
 
-    if existing_member:
-        member = await repo.reset_to_pending(existing_member, JoinMethod.INVITE_CODE.value)
-    else:
-        member = await repo.create_pending_member(
-            group.id, user_id, GroupRole.MEMBER.value, JoinMethod.INVITE_CODE.value
-        )
+    member = await _create_or_reset_pending(
+        repo, group.id, user_id, GroupRole.MEMBER.value, JoinMethod.INVITE_CODE.value,
+        existing_member,
+    )
     await repo.commit()
     return group_member_model_to_schema(member)
 
@@ -358,15 +376,10 @@ async def add_member(
     existing_member = await repo.get_member(group_id, member_data.user_id)
     _require_not_already_pending_or_member(existing_member)
 
-    if existing_member:
-        member = await repo.reset_to_pending(existing_member, JoinMethod.ADDED_BY_OWNER.value)
-    else:
-        member = await repo.create_pending_member(
-            group_id,
-            member_data.user_id,
-            GroupRole.MEMBER.value,
-            JoinMethod.ADDED_BY_OWNER.value,
-        )
+    member = await _create_or_reset_pending(
+        repo, group_id, member_data.user_id, GroupRole.MEMBER.value,
+        JoinMethod.ADDED_BY_OWNER.value, existing_member,
+    )
     await repo.commit()
     return group_member_model_to_schema(member)
 
@@ -384,17 +397,20 @@ async def _get_pending_member_or_404(
     return member
 
 
-async def accept_invite(
+async def _grant_membership(
     repo: GroupRepository,
     habit_repo: HabitRepository,
     users_repo: UsersRepository,
     group_id: int,
     user_id: int,
-) -> GroupWithHabits:
-    """Accept an owner-sent invite - grants membership and enrolls in current habits."""
-    member = await _get_pending_member_or_404(
-        repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER
-    )
+    join_method: JoinMethod,
+) -> GroupMember:
+    """
+    Shared pending->accepted transition for both accept_invite and approve_request:
+    capacity recheck (the group may have filled up while this was waiting), flip
+    to active, enroll in current habits.
+    """
+    member = await _get_pending_member_or_404(repo, group_id, user_id, join_method)
 
     active_count = await repo.count_active_members(group_id)
     if active_count >= MAX_MEMBERS:
@@ -404,16 +420,35 @@ async def accept_invite(
     await _sync_join(habit_repo, users_repo, group_id, user_id)
     await repo.commit()
     await habit_repo.commit()
+    return member
+
+
+async def _revoke_pending(
+    repo: GroupRepository, group_id: int, user_id: int, join_method: JoinMethod
+) -> None:
+    """Shared by decline_invite/reject_request: drop the pending row, nothing to unwind."""
+    member = await _get_pending_member_or_404(repo, group_id, user_id, join_method)
+    await repo.delete_member(member)
+    await repo.commit()
+
+
+async def accept_invite(
+    repo: GroupRepository,
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    group_id: int,
+    user_id: int,
+) -> GroupWithHabits:
+    """Accept an owner-sent invite - grants membership and enrolls in current habits."""
+    await _grant_membership(
+        repo, habit_repo, users_repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER
+    )
     return await get_group(repo, habit_repo, users_repo, group_id, user_id)
 
 
 async def decline_invite(repo: GroupRepository, group_id: int, user_id: int) -> None:
     """Decline an owner-sent invite."""
-    member = await _get_pending_member_or_404(
-        repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER
-    )
-    await repo.delete_member(member)
-    await repo.commit()
+    await _revoke_pending(repo, group_id, user_id, JoinMethod.ADDED_BY_OWNER)
 
 
 async def approve_request(
@@ -426,19 +461,10 @@ async def approve_request(
 ) -> GroupMemberRead:
     """Approve a join-by-code request (owner only) - grants membership."""
     await _require_owner(repo, group_id, owner_user_id)
-    member = await _get_pending_member_or_404(
-        repo, group_id, requester_id, JoinMethod.INVITE_CODE
+    member = await _grant_membership(
+        repo, habit_repo, users_repo, group_id, requester_id, JoinMethod.INVITE_CODE
     )
-
-    active_count = await repo.count_active_members(group_id)
-    if active_count >= MAX_MEMBERS:
-        raise ValidationAppError(f"Group is full (max {MAX_MEMBERS} members)")
-
-    accepted = await repo.accept_member(member)
-    await _sync_join(habit_repo, users_repo, group_id, requester_id)
-    await repo.commit()
-    await habit_repo.commit()
-    return group_member_model_to_schema(accepted)
+    return group_member_model_to_schema(member)
 
 
 async def reject_request(
@@ -446,11 +472,7 @@ async def reject_request(
 ) -> None:
     """Reject a join-by-code request (owner only)."""
     await _require_owner(repo, group_id, owner_user_id)
-    member = await _get_pending_member_or_404(
-        repo, group_id, requester_id, JoinMethod.INVITE_CODE
-    )
-    await repo.delete_member(member)
-    await repo.commit()
+    await _revoke_pending(repo, group_id, requester_id, JoinMethod.INVITE_CODE)
 
 
 async def list_my_invites(repo: GroupRepository, user_id: int) -> list[GroupInviteRead]:

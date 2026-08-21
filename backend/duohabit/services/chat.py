@@ -240,8 +240,12 @@ async def accept_conversation(
 
 async def decline_conversation(
     repo: ChatRepository, conversation_id: int, user_id: int
-) -> None:
-    """Decline a pending request - the whole conversation disappears for both sides."""
+) -> int:
+    """
+    Decline a pending request - the whole conversation disappears for both sides.
+
+    Returns the initiator's id, so the router can tell their live tabs it's gone.
+    """
     conversation = await _get_conversation_for_user(repo, conversation_id, user_id)
 
     if conversation.status != "pending":
@@ -249,8 +253,11 @@ async def decline_conversation(
     if conversation.initiator_id == user_id:
         raise ChatValidationError("Cannot decline your own request")
 
+    initiator_id = conversation.initiator_id
     await repo.delete_conversation(conversation)
     await repo.commit()
+
+    return initiator_id
 
 
 async def mark_read(

@@ -227,7 +227,7 @@ export const useGroupsStore = defineStore('groups', () => {
       myInvites.value = response.data
       return myInvites.value
     } catch (err) {
-      console.error('Ошибка загрузки инвайтов:', err)
+      error.value = err.response?.data?.detail || 'Ошибка загрузки инвайтов'
       throw err
     }
   }
@@ -238,7 +238,7 @@ export const useGroupsStore = defineStore('groups', () => {
       myRequests.value = response.data
       return myRequests.value
     } catch (err) {
-      console.error('Ошибка загрузки заявок:', err)
+      error.value = err.response?.data?.detail || 'Ошибка загрузки заявок'
       throw err
     }
   }

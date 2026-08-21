@@ -7,11 +7,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from duohabit.auth import get_token_claim
-from duohabit.chat_hub import hub
 from duohabit.db import get_session
 from duohabit.repositories.groups import GroupRepository
 from duohabit.repositories.habits import HabitRepository
-from duohabit.repositories.push import PushRepository
 from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.auth import AccessTokenClaim
 from duohabit.schemas.groups import (
@@ -48,18 +46,9 @@ from duohabit.services.groups import (
     remove_member,
     update_group,
 )
-from duohabit.services.notifications import NotificationPayload, notify
+from duohabit.services.notifications import NotificationPayload, notify_if_offline
 
 groups_router = APIRouter(prefix="/groups", tags=["Groups"])
-
-
-async def _notify_if_offline(
-    session: AsyncSession, user_ids: list[int], payload: NotificationPayload
-) -> None:
-    """Push only to recipients without a live socket - online ones will just see it in-app."""
-    offline = [user_id for user_id in user_ids if not hub.is_online(user_id)]
-    if offline:
-        await notify(PushRepository(session), offline, payload)
 
 
 @groups_router.post("", response_model=GroupWithHabits)
@@ -186,7 +175,7 @@ async def join_group_endpoint(
     group = await repo.get_group_by_id(member.group_id)
     requester = await UsersRepository(session).get_user(token_claim.user_id)
     if group is not None and requester is not None:
-        await _notify_if_offline(
+        await notify_if_offline(
             session,
             [group.owner_id],
             NotificationPayload(
@@ -231,7 +220,7 @@ async def add_member_endpoint(
     group = await repo.get_group_by_id(group_id)
     inviter = await UsersRepository(session).get_user(token_claim.user_id)
     if group is not None and inviter is not None:
-        await _notify_if_offline(
+        await notify_if_offline(
             session,
             [member_data.user_id],
             NotificationPayload(
@@ -263,7 +252,7 @@ async def accept_invite_endpoint(
 
     invitee = await UsersRepository(session).get_user(token_claim.user_id)
     if invitee is not None:
-        await _notify_if_offline(
+        await notify_if_offline(
             session,
             [result.owner_id],
             NotificationPayload(
@@ -309,7 +298,7 @@ async def approve_request_endpoint(
 
     group = await repo.get_group_by_id(group_id)
     if group is not None:
-        await _notify_if_offline(
+        await notify_if_offline(
             session,
             [user_id],
             NotificationPayload(
