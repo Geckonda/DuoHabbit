@@ -118,6 +118,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     error,
     shouldPrompt,
     markPrompted,
+    registerServiceWorker,
     syncStatus,
     enable,
     disable,
