@@ -22,6 +22,13 @@ class JoinMethod(str, Enum):
     ADDED_BY_OWNER = "added_by_owner"
 
 
+class MemberStatus(str, Enum):
+    """Whether a membership row is waiting on a response (должен совпадать с моделью)."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+
+
 # ========== GROUP ==========
 
 
@@ -78,6 +85,7 @@ class GroupMemberRead(GroupMemberBase):
 
     id: int
     group_id: int
+    status: MemberStatus
     is_active: bool
     created_at: datetime | None = None
 
@@ -101,3 +109,26 @@ class GroupInviteJoin(BaseModel):
     """Schema for joining a group by invite code."""
 
     invite_code: str
+
+
+# ========== PENDING (INVITES / REQUESTS) ==========
+
+
+class GroupInviteRead(BaseModel):
+    """An owner-sent invite the current user hasn't responded to yet."""
+
+    id: int
+    group_id: int
+    group_name: str
+    created_at: datetime | None = None
+
+
+class GroupJoinRequestRead(BaseModel):
+    """A pending join-by-code request on a group the current user owns."""
+
+    id: int
+    group_id: int
+    group_name: str
+    user_id: int
+    username: str
+    created_at: datetime | None = None

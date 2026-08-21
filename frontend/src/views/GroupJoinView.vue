@@ -13,6 +13,7 @@ const groupsStore = useGroupsStore()
 const inviteCode = ref('')
 const isLoading = ref(false)
 const error = ref('')
+const isSent = ref(false)
 
 onMounted(() => {
   if (route.query.code) {
@@ -30,10 +31,11 @@ const handleSubmit = async () => {
   error.value = ''
 
   try {
-    const group = await groupsStore.joinGroup(inviteCode.value.trim())
-    router.push(`/groups/${group.id}`)
+    // Членство только после того, как владелец одобрит заявку - группа пока не открывается
+    await groupsStore.joinGroup(inviteCode.value.trim())
+    isSent.value = true
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Не удалось присоединиться. Проверьте код.'
+    error.value = err.response?.data?.detail || 'Не удалось отправить заявку. Проверьте код.'
     console.error(err)
   } finally {
     isLoading.value = false
@@ -46,24 +48,34 @@ const handleSubmit = async () => {
     <AppHeader title="Присоединиться" fallback="/groups" />
 
     <div class="screen-body">
-      <div class="join-icon">🔗</div>
-      <p class="join-hint">Введите код приглашения от владельца группы</p>
+      <template v-if="isSent">
+        <div class="join-icon">✅</div>
+        <p class="join-hint">
+          Заявка отправлена! Как только владелец группы её одобрит, группа появится у тебя в списке.
+        </p>
+        <PillButton @click="router.push('/groups')">Готово</PillButton>
+      </template>
 
-      <form @submit.prevent="handleSubmit" class="join-form">
-        <input
-          v-model="inviteCode"
-          type="text"
-          placeholder="Например: a1b2c3d4"
-          :disabled="isLoading"
-          class="text-input code-input"
-          autocapitalize="off"
-          autocorrect="off"
-        >
+      <template v-else>
+        <div class="join-icon">🔗</div>
+        <p class="join-hint">Введите код приглашения от владельца группы</p>
 
-        <p v-if="error" class="error-message">{{ error }}</p>
+        <form @submit.prevent="handleSubmit" class="join-form">
+          <input
+            v-model="inviteCode"
+            type="text"
+            placeholder="Например: a1b2c3d4"
+            :disabled="isLoading"
+            class="text-input code-input"
+            autocapitalize="off"
+            autocorrect="off"
+          >
 
-        <PillButton type="submit" :loading="isLoading">Присоединиться</PillButton>
-      </form>
+          <p v-if="error" class="error-message">{{ error }}</p>
+
+          <PillButton type="submit" :loading="isLoading">Отправить заявку</PillButton>
+        </form>
+      </template>
     </div>
   </div>
 </template>

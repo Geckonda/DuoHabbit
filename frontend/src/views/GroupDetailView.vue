@@ -178,12 +178,14 @@ const openAddMember = async () => {
 
 const handleAddMember = async (user) => {
   try {
+    // Приглашение, не мгновенное членство - участники/привычки не меняются,
+    // пока юзер сам не примет приглашение
     await groupsStore.addMember(groupId, user.id)
-    await groupsStore.fetchGroupHabits(groupId)
-    await loadCheckinStatuses()
     showAddMemberModal.value = false
+    copyHint.value = `Приглашение отправлено: ${user.username}`
+    setTimeout(() => { copyHint.value = '' }, 2500)
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Ошибка добавления участника'
+    error.value = err.response?.data?.detail || 'Ошибка приглашения участника'
   }
 }
 

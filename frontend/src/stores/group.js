@@ -1,6 +1,6 @@
 // stores/group.js
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { groups } from '../api/group'
 
 export const useGroupsStore = defineStore('groups', () => {
@@ -11,6 +11,11 @@ export const useGroupsStore = defineStore('groups', () => {
   const isLoading = ref(false)
   const error = ref(null)
   const lastFetched = ref(null) // для кеширования
+
+  // Инвайты/заявки, ждущие моего ответа
+  const myInvites = ref([])
+  const myRequests = ref([])
+  const pendingCount = computed(() => myInvites.value.length + myRequests.value.length)
 
   // Загрузка моих групп
   const fetchGroups = async (onlyActive = true, force = false) => {
@@ -173,17 +178,17 @@ export const useGroupsStore = defineStore('groups', () => {
     }
   }
 
-  // Вступление по инвайт-коду
+  // Заявка на вступление по инвайт-коду - членство только после одобрения владельцем,
+  // так что в groupsList её пушить рано (юзер группу пока не видит)
   const joinGroup = async (inviteCode) => {
     isLoading.value = true
     error.value = null
 
     try {
       const response = await groups.join(inviteCode)
-      groupsList.value.push(response.data)
       return response.data
     } catch (err) {
-      error.value = err.response?.data?.detail || 'Не удалось присоединиться к группе'
+      error.value = err.response?.data?.detail || 'Не удалось отправить заявку'
       throw err
     } finally {
       isLoading.value = false
@@ -202,16 +207,67 @@ export const useGroupsStore = defineStore('groups', () => {
     }
   }
 
-  // Добавление участника владельцем
+  // Приглашение участника владельцем - членство только после его accept,
+  // поэтому список участников тут не трогаем (новый участник в нём не появится)
   const addMember = async (groupId, userId) => {
     try {
       const response = await groups.addMember(groupId, userId)
-      await fetchMembers(groupId)
       return response.data
     } catch (err) {
-      error.value = err.response?.data?.detail || 'Ошибка добавления участника'
+      error.value = err.response?.data?.detail || 'Ошибка приглашения участника'
       throw err
     }
+  }
+
+  // ===== Инвайты / заявки =====
+
+  const fetchMyInvites = async () => {
+    try {
+      const response = await groups.getMyInvites()
+      myInvites.value = response.data
+      return myInvites.value
+    } catch (err) {
+      console.error('Ошибка загрузки инвайтов:', err)
+      throw err
+    }
+  }
+
+  const fetchMyRequests = async () => {
+    try {
+      const response = await groups.getMyRequests()
+      myRequests.value = response.data
+      return myRequests.value
+    } catch (err) {
+      console.error('Ошибка загрузки заявок:', err)
+      throw err
+    }
+  }
+
+  const acceptInvite = async (groupId) => {
+    const response = await groups.acceptInvite(groupId)
+    myInvites.value = myInvites.value.filter((i) => i.group_id !== groupId)
+    groupsList.value.push(response.data)
+    return response.data
+  }
+
+  const declineInvite = async (groupId) => {
+    await groups.declineInvite(groupId)
+    myInvites.value = myInvites.value.filter((i) => i.group_id !== groupId)
+  }
+
+  const approveRequest = async (groupId, userId) => {
+    const response = await groups.approveRequest(groupId, userId)
+    myRequests.value = myRequests.value.filter(
+      (r) => !(r.group_id === groupId && r.user_id === userId)
+    )
+    return response.data
+  }
+
+  const rejectRequest = async (groupId, userId) => {
+    await groups.rejectRequest(groupId, userId)
+    myRequests.value = myRequests.value.filter(
+      (r) => !(r.group_id === groupId && r.user_id === userId)
+    )
   }
 
   // Удаление участника владельцем
@@ -244,6 +300,8 @@ export const useGroupsStore = defineStore('groups', () => {
     isLoading.value = false
     error.value = null
     lastFetched.value = null
+    myInvites.value = []
+    myRequests.value = []
   }
 
   return {
@@ -254,6 +312,9 @@ export const useGroupsStore = defineStore('groups', () => {
     isLoading,
     error,
     lastFetched,
+    myInvites,
+    myRequests,
+    pendingCount,
 
     // Методы
     fetchGroups,
@@ -269,6 +330,12 @@ export const useGroupsStore = defineStore('groups', () => {
     addMember,
     removeMember,
     leaveGroup,
+    fetchMyInvites,
+    fetchMyRequests,
+    acceptInvite,
+    declineInvite,
+    approveRequest,
+    rejectRequest,
     $reset
   }
 })
