@@ -1,7 +1,12 @@
 // stores/notifications.js
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { notifications } from '../api/notifications'
+
+// Баннер с предложением включить уведомления показываем один раз за все время
+// (при первом открытом чате), а не при каждом заходе - флаг переживает логаут/логин,
+// он про браузер, а не про юзера
+const PROMPTED_KEY = 'duohabit_push_prompted'
 
 // Boilerplate-конвертер: applicationServerKey ждет Uint8Array, а сервер отдает
 // VAPID-ключ строкой (urlsafe-base64)
@@ -17,6 +22,18 @@ export const useNotificationsStore = defineStore('notifications', () => {
   const permission = ref(isSupported ? Notification.permission : 'unsupported')
   const isSubscribed = ref(false)
   const error = ref(null)
+  const hasPrompted = ref(localStorage.getItem(PROMPTED_KEY) === '1')
+
+  // Показывать баннер только пока юзер еще не решил (permission все еще 'default') -
+  // если он уже сам включил в профиле или заблокировал в браузере, баннер лишний
+  const shouldPrompt = computed(
+    () => isSupported && permission.value === 'default' && !isSubscribed.value && !hasPrompted.value
+  )
+
+  const markPrompted = () => {
+    hasPrompted.value = true
+    localStorage.setItem(PROMPTED_KEY, '1')
+  }
 
   const registerServiceWorker = () => navigator.serviceWorker.register('/sw.js')
 
@@ -91,6 +108,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
     permission,
     isSubscribed,
     error,
+    shouldPrompt,
+    markPrompted,
     syncStatus,
     enable,
     disable,

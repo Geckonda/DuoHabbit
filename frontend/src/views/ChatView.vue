@@ -3,11 +3,14 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
+import { useNotificationsStore } from '../stores/notifications'
+import PushPromptBanner from '../components/PushPromptBanner.vue'
 
 const route = useRoute()
 const router = useRouter()
 const chatStore = useChatStore()
 const userStore = useUserStore()
+const notificationsStore = useNotificationsStore()
 
 const conversationId = computed(() => Number(route.params.id))
 const messagesBox = ref(null)
@@ -92,6 +95,7 @@ watch(
 onMounted(async () => {
   chatStore.setActiveConversation(conversationId.value)
   chatStore.connectSocket()
+  notificationsStore.syncStatus()
 
   // Диалог мог быть открыт по прямой ссылке, тогда списка еще нет
   if (chatStore.conversations.length === 0) {
@@ -116,6 +120,8 @@ onUnmounted(() => {
         :class="{ online: chatStore.socketStatus === 'connected' }"
       ></span>
     </div>
+
+    <PushPromptBanner />
 
     <div ref="messagesBox" class="messages">
       <button
