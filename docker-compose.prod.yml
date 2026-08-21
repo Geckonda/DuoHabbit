@@ -7,18 +7,17 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: duohabit-postgres
+    env_file:
+      - ./backend/.env  # Те же POSTGRES_USER/PASSWORD/DB, что использует backend - один источник правды
     environment:
-      POSTGRES_DB: duohabit_db
-      POSTGRES_USER: duohabit_user
-      POSTGRES_PASSWORD: duohabit_password  # В продакшене использовать secrets!
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5433:5432"  # Хост:контейнер
+      - "127.0.0.1:5433:5432"  # Только localhost, снаружи не нужен
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U duohabit_user -d duohhabitdb"]  # Вот так правильно!
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +28,7 @@ services:
   # Backend API
   backend:
     build: ./backend
-    container_name: backend
+    container_name: duohabit-backend
     restart: unless-stopped
     env_file:
       - ./backend/.env
@@ -46,7 +45,7 @@ services:
     mem_limit: 200m
     cpus: "0.5"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8005/').status==200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -57,9 +56,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
     container_name: duohabit-frontend
     ports:
-      - "3000:3000"
+      # Как и backend, доступен только на localhost - наружу отдаёт nginx
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
     networks:

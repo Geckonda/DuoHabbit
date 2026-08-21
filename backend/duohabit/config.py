@@ -18,6 +18,12 @@ class Settings(BaseSettings):
 
     jwt_secret: str
 
+    # Пустая строка по умолчанию - notify() тихо отключает пуши, если ключей нет
+    # (локальный dev, тесты), не требуя их для запуска приложения
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:admin@duohabit.com"
+
     session_lifetime: int = 3600 * 24 * 30  # 30 days
 
     testing: bool = False

@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { RouterView } from 'vue-router'
 import { useUserStore } from './stores/user'
 import LoaderScreen from './components/LoaderScreen.vue'
+import AppShell from './components/AppShell.vue'
+import InAppToast from './components/InAppToast.vue'
 
 const userStore = useUserStore()
 const showSplash = ref(true)
@@ -41,11 +42,8 @@ onMounted(async () => {
     loading-text="Загрузка..."
   />
   
-  <router-view v-slot="{ Component }" v-else>
-    <transition name="fade" mode="out-in">
-      <component :is="Component" />
-    </transition>
-  </router-view>
+  <AppShell v-else />
+  <InAppToast />
 </template>
 
 <style>
@@ -61,7 +59,7 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: var(--font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

@@ -1,13 +1,11 @@
+<!-- views/HomeView.vue -->
 <script setup>
 import { onMounted, computed } from 'vue'
-import { useUserStore } from '../stores/user'
 import { useHabitsStore } from '../stores/habit'
-import { useChatStore } from '../stores/chat'
 import { useRouter } from 'vue-router'
+import AppHeader from '../components/AppHeader.vue'
 
-const userStore = useUserStore()
 const habitsStore = useHabitsStore()
-const chatStore = useChatStore()
 const router = useRouter()
 
 const habits = computed(() => habitsStore.activeHabits)
@@ -24,47 +22,21 @@ const handleAddHabit = () => {
   router.push('/habits/new')
 }
 
-const handleOpenChats = () => {
-  router.push('/chats')
-}
-
-const handleLogout = async () => {
-  await userStore.logout()
-  habitsStore.$reset()
-  chatStore.$reset()
-  router.push('/login')
-}
-
 onMounted(() => {
   loadHabits()
-
-  // Диалоги нужны здесь только ради счетчика непрочитанных,
-  // сокет держит его свежим без перезагрузки страницы
-  chatStore.fetchConversations().catch(() => {})
-  chatStore.connectSocket()
 })
 </script>
 
 <template>
-  <div class="home">
-    <div class="header">
-      <h1>Мои привычки</h1>
-      <div class="actions">
-        <button @click="handleOpenChats" class="chats">
-          💬
-          <span v-if="chatStore.unreadTotal > 0" class="badge">
-            {{ chatStore.unreadTotal }}
-          </span>
-        </button>
+  <div class="screen">
+    <AppHeader title="Мои привычки" :show-back="false">
+      <template #right>
         <button @click="handleAddHabit" class="add">+</button>
-        <button @click="handleLogout" class="logout">Выйти</button>
-      </div>
-    </div>
+      </template>
+    </AppHeader>
 
-    <div class="content">
-      <div v-if="habitsStore.isLoading" class="loading">
-        Загрузка...
-      </div>
+    <div class="screen-body">
+      <div v-if="habitsStore.isLoading" class="loading">Загрузка...</div>
 
       <div v-else-if="habitsStore.error" class="error">
         <p>{{ habitsStore.error }}</p>
@@ -77,19 +49,20 @@ onMounted(() => {
       </div>
 
       <div v-else class="list">
-        <div 
-          v-for="habit in habits" 
-          :key="habit.id" 
+        <div
+          v-for="habit in habits"
+          :key="habit.id"
           class="item"
           @click="router.push(`/habits/${habit.id}`)"
         >
           <div>
             <div class="title">{{ habit.title }}</div>
-            <div v-if="habit.description" class="description">
-              {{ habit.description }}
+            <div class="meta">
+              <span v-if="habit.current_streak">🔥 {{ habit.current_streak }}</span>
+              <span v-if="habit.description" class="description">{{ habit.description }}</span>
             </div>
           </div>
-          <button class="menu" @click.stop>•••</button>
+          <span class="chevron">›</span>
         </div>
       </div>
     </div>
@@ -97,113 +70,55 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.home {
-  min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-}
-
-.header {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  padding: 12px 16px;
+.screen {
+  height: 100%;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  top: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  flex-direction: column;
 }
 
-.header h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #000;
-}
-
-.actions {
-  display: flex;
-  gap: 8px;
-}
-
-.chats {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: #fff;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.chats .badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: #FF3B30;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.screen-body {
+  flex: 1;
+  overflow-y: auto;
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-4);
+  padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + var(--space-4));
 }
 
 .add {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
   border: none;
-  font-size: 24px;
-  color: #007AFF;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.logout {
-  padding: 8px 16px;
-  border-radius: 20px;
-  background: #fff;
-  border: none;
-  font-size: 15px;
-  color: #FF3B30;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.content {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  font-size: 22px;
+  color: var(--color-ios-blue);
 }
 
 .loading {
   text-align: center;
   padding: 40px 0;
-  color: #8E8E93;
+  color: var(--text-tertiary);
 }
 
 .error {
   text-align: center;
   padding: 40px 0;
-  color: #FF3B30;
+  color: var(--color-danger);
 }
 
 .error button {
-  margin-top: 16px;
-  padding: 8px 20px;
-  border-radius: 20px;
-  background: #fff;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
   border: none;
-  color: #007AFF;
+  color: var(--color-ios-blue);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .empty {
@@ -212,57 +127,55 @@ onMounted(() => {
 }
 
 .empty p {
-  color: #8E8E93;
-  margin-bottom: 20px;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-5);
 }
 
 .empty button {
-  padding: 12px 24px;
-  border-radius: 24px;
-  background: #007AFF;
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--color-ios-blue);
   border: none;
   color: #fff;
   font-size: 16px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .item {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
+  background: var(--surface-card);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
   display: flex;
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .title {
   font-size: 17px;
   font-weight: 500;
-  color: #000;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
-.description {
+.meta {
+  display: flex;
+  gap: var(--space-3);
   font-size: 14px;
-  color: #8E8E93;
+  color: var(--text-tertiary);
 }
 
-.menu {
-  background: none;
-  border: none;
-  color: #8E8E93;
-  font-size: 18px;
-  padding: 8px;
-  cursor: pointer;
+.chevron {
+  color: var(--color-gray-light);
+  font-size: 20px;
 }
 </style>

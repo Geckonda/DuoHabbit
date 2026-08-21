@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { chat } from '../api/chat'
 import { createChatSocket } from '../api/ws'
+import { useUserStore } from './user'
+import { useToastStore } from './toast'
 
 export const useChatStore = defineStore('chat', () => {
   // Состояние
@@ -139,8 +141,21 @@ export const useChatStore = defineStore('chat', () => {
       const conversation = findConversation(message.conversation_id)
       const isOpen = activeConversationId.value === message.conversation_id
 
+      const isMine = message.sender_id === useUserStore().user?.id
+
       if (conversation && !isOpen) {
         conversation.unread_count = (conversation.unread_count || 0) + 1
+
+        // Мы в приложении, но не в этом чате - показываем внутренний тост.
+        // Снаружи приложения (сокет не подключен) это место вообще не выполнится -
+        // туда прилетит внешний Web Push с бэкенда
+        if (!isMine) {
+          useToastStore().show({
+            title: conversation.companion?.username || 'Новое сообщение',
+            body: message.text,
+            url: `/chats/${message.conversation_id}`,
+          })
+        }
       }
 
       // Диалога еще нет в списке - его только что завели с той стороны

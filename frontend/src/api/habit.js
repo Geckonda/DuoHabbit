@@ -2,47 +2,47 @@
 import api from './index'
 
 export const habits = {
-  // Получить все привычки
-  getAll: (onlyActive = true) => 
+  // Получить все личные привычки (групповые — через api/group.js)
+  getAll: (onlyActive = true) =>
     api.get('/habits', { params: { only_active: onlyActive } }),
-  
-  // Получить привычку по ID
-  getById: (habitId) => 
+
+  // Получить привычку по ID (личную или групповую — участнику доступны обе)
+  getById: (habitId) =>
     api.get(`/habits/${habitId}`),
-  
-  // Получить привычку с чеками
-  getWithChecks: (habitId) => 
+
+  // Получить привычку с последними отметками
+  getWithChecks: (habitId) =>
     api.get(`/habits/${habitId}/details`),
-  
-  // Создать привычку
-  create: (data) => 
+
+  // Создать личную привычку (для групповой — groups.addHabit)
+  create: (data) =>
     api.post('/habits', data),
-  
-  // Обновить привычку
-  update: (habitId, data) => 
+
+  // Обновить (название/описание/приватность/allowed_misses) — владелец привычки
+  update: (habitId, data) =>
     api.patch(`/habits/${habitId}`, data),
-  
+
   // Архивировать
-  archive: (habitId) => 
+  archive: (habitId) =>
     api.post(`/habits/${habitId}/archive`),
-  
+
   // Восстановить
-  restore: (habitId) => 
+  restore: (habitId) =>
     api.post(`/habits/${habitId}/restore`),
-  
+
   // Удалить навсегда
-  delete: (habitId) => 
+  delete: (habitId) =>
     api.delete(`/habits/${habitId}`),
-  
-  // Отметить выполнение
-  check: (habitId, data) => 
-    api.post(`/habits/${habitId}/check`, data),
-  
-  // Получить статистику
-  getStats: (habitId, days = 30) => 
-    api.get(`/habits/${habitId}/stats`, { params: { days } }),
-  
-  // Удалить отметку
-  deleteCheck: (habitId, checkId) => 
-    api.delete(`/habits/${habitId}/checks/${checkId}`)
+
+  // Отметить выполнение за сегодня (по своей таймзоне, бэкфилл не поддержан)
+  check: (habitId) =>
+    api.post(`/habits/${habitId}/check`),
+
+  // Последние отметки
+  getChecks: (habitId, limit = 30) =>
+    api.get(`/habits/${habitId}/checks`, { params: { limit } }),
+
+  // Кто из участников уже отметился в своём текущем периоде
+  getCheckinStatus: (habitId) =>
+    api.get(`/habits/${habitId}/checks/status`)
 }

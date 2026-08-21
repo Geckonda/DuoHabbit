@@ -11,9 +11,9 @@ from duohabit.repositories.users import UnitOfWorkUserDB, UsersRepository
 from duohabit.schemas.auth import AccessTokenClaim
 from duohabit.schemas.common import PaginationParams
 from duohabit.schemas.users import (
-    UserCreate,  
-    UserOut,    
-    UserUpdate,  
+    UserCreate,
+    UserOut,
+    UserUpdate,
 )
 
 
@@ -44,7 +44,7 @@ def user_model_to_schema(
     user_model: User, request_context: AccessTokenClaim | None = None
 ) -> UserOut:
     """Convert SQLAlchemy User model to Pydantic schema."""
-    
+
     include_private = request_context is not None and (
         request_context.account_is_platform_admin
         or request_context.user_id == user_model.id
@@ -58,6 +58,7 @@ def user_model_to_schema(
         is_active=user_model.is_active,
         is_superuser=user_model.is_superuser,
         is_verified=user_model.is_verified,
+        timezone=user_model.timezone if include_private else None,
     )
 
 
@@ -96,25 +97,25 @@ async def create_user(
     manager: UserManager,
 ) -> UserOut:
     """Create a new user and return the created user."""
-    
+
     # Проверка прав на создание админа
     if user_in.is_platform_admin and not claim_admin:
         raise Exception("Platform admins must be created by a platform admin")
-    
+
     # Проверка уникальности email через БД
     try:
         created_user_model = await manager.create(user_in)
     except fastapi_users_exceptions.UserAlreadyExists:
         raise Exception("Email already in use")
-    
+
     await repo.commit()
-    
+
     # Для ответа используем claim создателя
     created_user_claim = AccessTokenClaim(
         user_id=created_user_model.id,
         account_is_platform_admin=created_user_model.is_platform_admin,
     )
-    
+
     return user_model_to_schema(created_user_model, request_context=created_user_claim)
 
 
@@ -126,18 +127,21 @@ async def update_user(
     manager: UserManager,
 ) -> UserOut:
     """Update a user."""
-    
+
     # Проверка прав
-    if user_id != request_context.user_id and not request_context.account_is_platform_admin:
+    if (
+        user_id != request_context.user_id
+        and not request_context.account_is_platform_admin
+    ):
         raise Exception("You can only update your own profile")
-    
+
     # Получаем пользователя
     user = await repo.get_user(user_id)
     if not user:
         raise Exception("User not found")
-    
+
     # Обновляем через fastapi-users manager
     updated_user = await manager.update(user_update, user)
     await repo.commit()
-    
+
     return user_model_to_schema(updated_user, request_context=request_context)

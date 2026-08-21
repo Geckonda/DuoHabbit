@@ -17,6 +17,7 @@ from duohabit.db import get_session
 from duohabit.models.auth import AccessToken
 from duohabit.models.users import User
 from duohabit.repositories.chat import ChatRepository
+from duohabit.repositories.push import PushRepository
 from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.auth import AccessTokenClaim
 from duohabit.schemas.chat import (
@@ -36,7 +37,10 @@ from duohabit.services.chat import (
     open_direct_conversation,
     send_message,
 )
+from duohabit.services.notifications import NotificationPayload, notify
 from duohabit.services.users import UserManager
+
+MESSAGE_PREVIEW_LIMIT = 120
 
 chat_router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -138,6 +142,30 @@ async def send_message_endpoint(
             "message": message.model_dump(mode="json"),
         },
     )
+
+    # Пуш только тем, кто не онлайн - иначе дублирующее уведомление при открытом чате
+    offline_recipients = [
+        recipient_id
+        for recipient_id in recipient_ids
+        if recipient_id != token_claim.user_id and not hub.is_online(recipient_id)
+    ]
+    if offline_recipients:
+        sender = await UsersRepository(session).get_user(token_claim.user_id)
+        preview = (
+            message.text
+            if len(message.text) <= MESSAGE_PREVIEW_LIMIT
+            else message.text[: MESSAGE_PREVIEW_LIMIT - 3] + "..."
+        )
+        await notify(
+            PushRepository(session),
+            offline_recipients,
+            NotificationPayload(
+                title=sender.username if sender else "DuoHabit",
+                body=preview,
+                url=f"/chats/{conversation_id}",
+                tag=f"chat-{conversation_id}",
+            ),
+        )
 
     return message
 

@@ -12,9 +12,11 @@ from typing import cast
 
 from duohabit.models.chat import Conversation, ConversationParticipant, Message
 from duohabit.models.habits import Habit, HabitCheck, HabitType
+from duohabit.models.push import PushSubscription
 from duohabit.models.users import User
 from duohabit.repositories.chat import ChatRepository
 from duohabit.repositories.habits import HabitRepository
+from duohabit.repositories.push import PushRepository
 from duohabit.repositories.users import UsersRepository
 from duohabit.schemas.common import PaginationParams
 
@@ -390,6 +392,55 @@ class FakeUsersRepository:
         return None
 
 
+class FakePushRepository:
+    """In-memory stand-in for PushRepository."""
+
+    def __init__(self) -> None:
+        self.subscriptions: dict[str, PushSubscription] = {}
+        self.commits = 0
+        self._next_id = 1
+
+    async def commit(self) -> None:
+        """Count commits so tests can assert services persist their work."""
+        self.commits += 1
+
+    async def get_by_endpoint(self, endpoint: str) -> PushSubscription | None:
+        """Get a subscription by its push-service endpoint."""
+        return self.subscriptions.get(endpoint)
+
+    async def upsert(
+        self, user_id: int, endpoint: str, p256dh: str, auth: str
+    ) -> PushSubscription:
+        """Create or refresh a subscription by endpoint."""
+        subscription = self.subscriptions.get(endpoint)
+        if subscription is None:
+            subscription = PushSubscription(
+                id=self._next_id, user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth
+            )
+            self._next_id += 1
+        else:
+            subscription.user_id = user_id
+            subscription.p256dh = p256dh
+            subscription.auth = auth
+        self.subscriptions[endpoint] = subscription
+        return subscription
+
+    async def delete_by_endpoint(self, user_id: int, endpoint: str) -> None:
+        """Remove a subscription, scoped to its owner."""
+        subscription = self.subscriptions.get(endpoint)
+        if subscription is not None and subscription.user_id == user_id:
+            del self.subscriptions[endpoint]
+
+    async def delete(self, subscription: PushSubscription) -> None:
+        """Remove a subscription."""
+        self.subscriptions.pop(subscription.endpoint, None)
+
+    async def get_by_users(self, user_ids: list[int]) -> list[PushSubscription]:
+        """Get every subscription belonging to any of the given users."""
+        ids = set(user_ids)
+        return [sub for sub in self.subscriptions.values() if sub.user_id in ids]
+
+
 # Сервисы типизированы настоящими репозиториями, а фейки повторяют только их
 # поведение. Приведение типа держится в одном месте, чтобы не засорять тесты.
 
@@ -407,3 +458,8 @@ def as_habit_repo(fake: FakeHabitRepository) -> HabitRepository:
 def as_users_repo(fake: FakeUsersRepository) -> UsersRepository:
     """Pass a fake where the service expects a UsersRepository."""
     return cast(UsersRepository, fake)
+
+
+def as_push_repo(fake: FakePushRepository) -> PushRepository:
+    """Pass a fake where the service expects a PushRepository."""
+    return cast(PushRepository, fake)

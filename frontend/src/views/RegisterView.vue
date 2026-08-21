@@ -157,7 +157,7 @@ const handleSubmit = async () => {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-family);
   position: relative;
   overflow: hidden;
 }

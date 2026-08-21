@@ -188,17 +188,22 @@ export const useHabitsStore = defineStore('habits', () => {
     }
   }
 
-  // Отметка выполнения привычки
-  const checkHabit = async (habitId, checkDate = new Date().toISOString().split('T')[0]) => {
+  // Отметка выполнения за сегодня (по своей таймзоне, без бэкфилла)
+  const checkHabit = async (habitId) => {
     try {
-      const response = await habits.check(habitId, { check_date: checkDate })
-      
-      // Обновляем streak в привычке
+      const response = await habits.check(habitId)
+
+      // Обновляем стрики в списке (my_current_streak — личный, current_streak — командный MIN)
       const habit = habitsList.value.find(h => h.id === habitId)
       if (habit) {
         habit.current_streak = response.data.current_streak
+        habit.my_current_streak = response.data.my_current_streak
       }
-      
+      if (currentHabit.value?.id === habitId) {
+        currentHabit.value.current_streak = response.data.current_streak
+        currentHabit.value.my_current_streak = response.data.my_current_streak
+      }
+
       return response.data
     } catch (err) {
       error.value = err.response?.data?.detail || 'Ошибка отметки'
@@ -206,13 +211,13 @@ export const useHabitsStore = defineStore('habits', () => {
     }
   }
 
-  // Получение статистики привычки
-  const getHabitStats = async (habitId, days = 30) => {
+  // Кто из участников привычки уже отметился сегодня (у каждого свой "сегодня")
+  const fetchCheckinStatus = async (habitId) => {
     try {
-      const response = await habits.getStats(habitId, days)
+      const response = await habits.getCheckinStatus(habitId)
       return response.data
     } catch (err) {
-      error.value = err.response?.data?.detail || 'Ошибка загрузки статистики'
+      error.value = err.response?.data?.detail || 'Ошибка загрузки статуса отметок'
       throw err
     }
   }
@@ -247,7 +252,7 @@ export const useHabitsStore = defineStore('habits', () => {
     restoreHabit,
     deleteHabit,
     checkHabit,
-    getHabitStats,
+    fetchCheckinStatus,
     $reset
   }
 })

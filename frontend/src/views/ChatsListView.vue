@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { users } from '../api/user'
+import AppHeader from '../components/AppHeader.vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -68,11 +69,11 @@ onMounted(() => {
 
 <template>
   <div class="chats">
-    <div class="header">
-      <button class="back" @click="router.push('/')">‹</button>
-      <h1>Чаты</h1>
-      <button class="add" @click="openPicker">+</button>
-    </div>
+    <AppHeader title="Чаты" :show-back="false">
+      <template #right>
+        <button class="add" @click="openPicker">+</button>
+      </template>
+    </AppHeader>
 
     <div class="content">
       <div v-if="chatStore.isLoading && conversations.length === 0" class="loading">
@@ -138,79 +139,54 @@ onMounted(() => {
 
 <style scoped>
 .chats {
-  min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-}
-
-.header {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px);
-  padding: 12px 16px;
+  height: 100%;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  top: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-.header h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #000;
-}
-
-.back {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: #fff;
-  border: none;
-  font-size: 24px;
-  color: #007AFF;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  flex-direction: column;
 }
 
 .add {
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  background: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
   border: none;
-  font-size: 24px;
-  color: #007AFF;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-sm);
+  font-size: 22px;
+  color: var(--color-ios-blue);
 }
 
 .content {
+  flex: 1;
+  overflow-y: auto;
   max-width: 600px;
+  width: 100%;
   margin: 0 auto;
-  padding: 16px;
+  padding: var(--space-4);
+  padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom) + var(--space-4));
 }
 
 .loading {
   text-align: center;
   padding: 40px 0;
-  color: #8E8E93;
+  color: var(--text-tertiary);
 }
 
 .error {
   text-align: center;
   padding: 40px 0;
-  color: #FF3B30;
+  color: var(--color-danger);
 }
 
 .error button {
-  margin-top: 16px;
-  padding: 8px 20px;
-  border-radius: 20px;
-  background: #fff;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
   border: none;
-  color: #007AFF;
+  color: var(--color-ios-blue);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .empty {
@@ -219,37 +195,37 @@ onMounted(() => {
 }
 
 .empty p {
-  color: #8E8E93;
-  margin-bottom: 20px;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-5);
 }
 
 .empty button {
-  padding: 12px 24px;
-  border-radius: 24px;
-  background: #007AFF;
+  padding: var(--space-3) var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--color-ios-blue);
   border: none;
   color: #fff;
   font-size: 16px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .item {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
+  background: var(--surface-card);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
   display: flex;
   justify-content: space-between;
   align-items: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .item-body {
@@ -259,13 +235,13 @@ onMounted(() => {
 .title {
   font-size: 17px;
   font-weight: 500;
-  color: #000;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
 .description {
   font-size: 14px;
-  color: #8E8E93;
+  color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -276,9 +252,9 @@ onMounted(() => {
   min-width: 22px;
   height: 22px;
   padding: 0 7px;
-  border-radius: 11px;
-  background: #FF3B30;
-  color: #fff;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: var(--text-on-accent);
   font-size: 13px;
   font-weight: 600;
   display: flex;
@@ -293,7 +269,7 @@ onMounted(() => {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  z-index: 10;
+  z-index: var(--z-modal);
 }
 
 .picker {

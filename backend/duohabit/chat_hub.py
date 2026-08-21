@@ -26,6 +26,10 @@ class ConnectionManager:
         await websocket.accept()
         self._connections[user_id].add(websocket)
 
+    def is_online(self, user_id: int) -> bool:
+        """Whether the user currently has at least one live socket."""
+        return bool(self._connections.get(user_id))
+
     def disconnect(self, user_id: int, websocket: WebSocket) -> None:
         """Forget a socket. Safe to call twice."""
         sockets = self._connections.get(user_id)

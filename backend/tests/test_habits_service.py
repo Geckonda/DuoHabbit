@@ -1,327 +1,256 @@
-"""Tests for the habit business logic."""
+"""Service-level tests for the unified habit engine: personal habits and the per-member
+streak/grace reconciliation algorithm shared by personal and group habits alike."""
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from duohabit.schemas.habits import HabitCreate, HabitType, HabitUpdate, HabitWithChecks
+from duohabit.errors import ConflictError, ForbiddenError
+from duohabit.models.habits import HabitType as ModelHabitType
+from duohabit.repositories.habits import HabitRepository
+from duohabit.repositories.users import UsersRepository
+from duohabit.schemas.habits import HabitCreate, HabitType, HabitUpdate
 from duohabit.services.habits import (
-    archive_habit,
-    check_habit,
+    _reconcile_member,
+    check_in,
     create_habit,
-    delete_check,
-    delete_habit,
     get_habit,
-    get_habit_checks,
-    get_user_habits,
-    restore_habit,
     update_habit,
 )
-from tests.fakes import FakeHabitRepository, as_habit_repo
+from duohabit.utils.periods import compute_period_key, local_today
+from tests.conftest import make_user
 
-OWNER = 1
-STRANGER = 2
+TZ = "UTC"
 
 
-async def seed_habit(
-    repo: FakeHabitRepository, title: str = "Бегать", user_id: int = OWNER
-) -> int:
-    """Create a habit through the service, return its id."""
-    habit = await create_habit(
-        as_habit_repo(repo), user_id, HabitCreate(title=title, description=None)
+async def _make_personal_habit(
+    habit_repo: HabitRepository,
+    users_repo: UsersRepository,
+    user_id: int,
+    habit_type: HabitType = HabitType.DAILY,
+    allowed_misses: int = 0,
+):
+    return await create_habit(
+        habit_repo,
+        users_repo,
+        user_id,
+        HabitCreate(title="Бег", habit_type=habit_type, allowed_misses=allowed_misses),
     )
-    return habit.id
-
-
-# ========== CRUD ==========
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_create_habit_persists() -> None:
-    """A new habit belongs to its author and starts with a zero streak."""
-    repo = FakeHabitRepository()
+async def test_create_personal_habit_has_single_member_and_zero_streak(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
 
-    habit = await create_habit(
-        as_habit_repo(repo),
-        OWNER,
-        HabitCreate(title="Бегать", description="3 км", habit_type=HabitType.DAILY),
-    )
+    habit = await _make_personal_habit(habit_repo, users_repo, user.id)
 
-    assert habit.title == "Бегать"
-    assert habit.user_id == OWNER
+    assert habit.group_id is None
+    assert habit.member_count == 1
     assert habit.current_streak == 0
-    assert habit.is_active is True
-    assert repo.commits == 1
+    assert habit.my_current_streak == 0
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_get_user_habits_hides_archived_by_default() -> None:
-    """The default listing shows active habits only."""
-    repo = FakeHabitRepository()
-    first = await seed_habit(repo, "Бегать")
-    second = await seed_habit(repo, "Читать")
+async def test_check_in_increments_own_streak_and_is_reflected_as_min(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(habit_repo, users_repo, user.id)
 
-    await archive_habit(as_habit_repo(repo), second, OWNER)
-
-    active = await get_user_habits(as_habit_repo(repo), OWNER)
-    everything = await get_user_habits(as_habit_repo(repo), OWNER, only_active=False)
-
-    assert [h.id for h in active] == [first]
-    assert {h.id for h in everything} == {first, second}
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_get_habit_of_another_user_is_not_found() -> None:
-    """Habits are scoped to their owner."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-
-    with pytest.raises(Exception, match="Habit not found"):
-        await get_habit(as_habit_repo(repo), habit_id, STRANGER)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_get_habit_with_checks_returns_recent_checks() -> None:
-    """The details view carries the habit's checks."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [0, 1, 2])
-
-    habit = await get_habit(as_habit_repo(repo), habit_id, OWNER, with_checks=True)
-
-    assert isinstance(habit, HabitWithChecks)
-    assert len(habit.recent_checks) == 3
-    # Свежие сверху
-    assert habit.recent_checks[0].check_date == date.today()
-    assert all(check.habit_id == habit_id for check in habit.recent_checks)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_update_habit_touches_only_given_fields() -> None:
-    """A partial update leaves untouched fields alone."""
-    repo = FakeHabitRepository()
-    habit = await create_habit(
-        as_habit_repo(repo),
-        OWNER,
-        HabitCreate(title="Бегать", description="3 км"),
-    )
-    commits_before = repo.commits
-
-    updated = await update_habit(
-        as_habit_repo(repo), habit.id, OWNER, HabitUpdate(title="Бегать больше")
-    )
-
-    assert updated.title == "Бегать больше"
-    assert updated.description == "3 км"
-    assert repo.commits == commits_before + 1
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_update_missing_habit_is_rejected() -> None:
-    """Updating something that does not exist fails."""
-    repo = FakeHabitRepository()
-
-    with pytest.raises(Exception, match="Habit not found"):
-        await update_habit(as_habit_repo(repo), 404, OWNER, HabitUpdate(title="x"))
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_archive_and_restore_flip_the_flag() -> None:
-    """Archiving is a soft delete and is reversible."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-
-    archived = await archive_habit(as_habit_repo(repo), habit_id, OWNER)
-    assert archived.is_active is False
-
-    restored = await restore_habit(as_habit_repo(repo), habit_id, OWNER)
-    assert restored.is_active is True
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_delete_habit_removes_it() -> None:
-    """A deleted habit is gone for good."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    commits_before = repo.commits
-
-    await delete_habit(as_habit_repo(repo), habit_id, OWNER)
-
-    assert not repo.habits
-    assert repo.commits == commits_before + 1
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_delete_habit_of_another_user_is_rejected() -> None:
-    """A stranger cannot delete someone else's habit."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-
-    with pytest.raises(Exception, match="Habit not found"):
-        await delete_habit(as_habit_repo(repo), habit_id, STRANGER)
-
-    assert habit_id in repo.habits
-
-
-# ========== CHECKS AND STREAK ==========
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_first_check_starts_the_streak() -> None:
-    """Checking in today gives a streak of one."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    commits_before = repo.commits
-
-    result = await check_habit(as_habit_repo(repo), habit_id, OWNER)
+    result = await check_in(habit_repo, users_repo, habit.id, user.id)
 
     assert result["checked"] is True
-    assert result["current_streak"] == 1
-    assert result["check_date"] == date.today().isoformat()
-    assert repo.habits[habit_id].current_streak == 1
-    assert repo.commits == commits_before + 1
+    assert result["my_current_streak"] == 1
+    assert (
+        result["current_streak"] == 1
+    )  # MIN over a single member == that member's streak
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_streak_counts_consecutive_days() -> None:
-    """Yesterday and the day before extend today's streak."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [1, 2])
+async def test_check_in_twice_same_period_conflicts(db_session: AsyncSession) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(habit_repo, users_repo, user.id)
 
-    result = await check_habit(as_habit_repo(repo), habit_id, OWNER)
-
-    assert result["current_streak"] == 3
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_streak_breaks_on_a_missed_day() -> None:
-    """A gap resets the streak to the unbroken tail only."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    # Вчера пропущено, поэтому более старые отметки в стрик не идут
-    repo.add_checks(habit_id, [2, 3])
-
-    result = await check_habit(as_habit_repo(repo), habit_id, OWNER)
-
-    assert result["current_streak"] == 1
+    await check_in(habit_repo, users_repo, habit.id, user.id)
+    with pytest.raises(ConflictError):
+        await check_in(habit_repo, users_repo, habit.id, user.id)
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_second_check_on_the_same_day_is_rejected() -> None:
-    """One check per habit per day."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    await check_habit(as_habit_repo(repo), habit_id, OWNER)
+async def test_check_in_forbidden_for_non_participant(db_session: AsyncSession) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    owner = await make_user(db_session, "owner", "owner@test.com")
+    outsider = await make_user(db_session, "outsider", "outsider@test.com")
+    habit = await _make_personal_habit(habit_repo, users_repo, owner.id)
 
-    with pytest.raises(ValueError, match="already exists"):
-        await check_habit(as_habit_repo(repo), habit_id, OWNER)
-
-    assert len(repo.checks) == 1
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_archived_habit_cannot_be_checked() -> None:
-    """An archived habit is out of the game."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    await archive_habit(as_habit_repo(repo), habit_id, OWNER)
-
-    with pytest.raises(Exception, match="Cannot check archived habit"):
-        await check_habit(as_habit_repo(repo), habit_id, OWNER)
+    with pytest.raises(ForbiddenError):
+        await check_in(habit_repo, users_repo, habit.id, outsider.id)
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_check_of_another_user_habit_is_rejected() -> None:
-    """A stranger cannot check someone else's habit."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-
-    with pytest.raises(Exception, match="Habit not found"):
-        await check_habit(as_habit_repo(repo), habit_id, STRANGER)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_get_habit_checks_returns_own_habit_id() -> None:
-    """Every returned check must point at the habit it belongs to."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [0, 1])
-
-    checks = await get_habit_checks(as_habit_repo(repo), habit_id, OWNER)
-
-    assert len(checks) == 2
-    assert {check.habit_id for check in checks} == {habit_id}
-    assert len({check.id for check in checks}) == 2
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_get_habit_checks_of_another_user_is_rejected() -> None:
-    """Checks are as private as the habit itself."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [0])
-
-    with pytest.raises(Exception, match="Habit not found"):
-        await get_habit_checks(as_habit_repo(repo), habit_id, STRANGER)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_delete_check_recalculates_streak_and_persists() -> None:
-    """Removing today's check drops the streak, and the change must be saved."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [1])
-    await check_habit(as_habit_repo(repo), habit_id, OWNER)
-    assert repo.habits[habit_id].current_streak == 2
-
-    today_check = await repo.get_check_by_date(habit_id, date.today())
-    assert today_check is not None
-    commits_before = repo.commits
-
-    await delete_check(as_habit_repo(repo), today_check.id, OWNER)
-
-    # Стрик считается от сегодня, вчерашняя отметка сама по себе его не держит
-    assert repo.habits[habit_id].current_streak == 0
-    assert await repo.get_check_by_date(habit_id, date.today()) is None
-    assert repo.commits == commits_before + 1
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_delete_missing_check_is_rejected() -> None:
-    """Deleting a non-existent check fails."""
-    repo = FakeHabitRepository()
-
-    with pytest.raises(Exception, match="Check not found"):
-        await delete_check(as_habit_repo(repo), 404, OWNER)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_delete_check_of_another_user_is_rejected() -> None:
-    """A stranger cannot delete a check of someone else's habit."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-    repo.add_checks(habit_id, [0])
-    check = await repo.get_check_by_date(habit_id, date.today())
-    assert check is not None
-
-    with pytest.raises(Exception, match="Access denied"):
-        await delete_check(as_habit_repo(repo), check.id, STRANGER)
-
-    assert len(repo.checks) == 1
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_check_for_a_past_date_does_not_fake_a_streak() -> None:
-    """A check dated in the past leaves today's streak at zero."""
-    repo = FakeHabitRepository()
-    habit_id = await seed_habit(repo)
-
-    result = await check_habit(
-        as_habit_repo(repo),
-        habit_id,
-        OWNER,
-        check_date=date.today() - timedelta(days=1),
+async def test_get_habit_reflects_reconciliation(db_session: AsyncSession) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, allowed_misses=0
     )
 
-    assert result["current_streak"] == 0
+    member = await habit_repo.get_member(habit.id, user.id)
+    yesterday = local_today(TZ) - timedelta(days=1)
+    await habit_repo.update_member(
+        member,
+        current_streak=5,
+        last_resolved_period_key=compute_period_key(
+            yesterday - timedelta(days=1), ModelHabitType.DAILY
+        ),
+    )
+    await habit_repo.commit()
+    # Nobody checked in yesterday -> a real miss, no grace available.
+
+    read = await get_habit(habit_repo, users_repo, habit.id, user.id)
+
+    assert read.current_streak == 0
+    assert read.my_current_streak == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_update_habit_allowed_misses_adjusts_member_grace(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, allowed_misses=1
+    )
+
+    updated = await update_habit(
+        habit_repo, habit.id, user.id, HabitUpdate(allowed_misses=3)
+    )
+
+    member = await habit_repo.get_member(habit.id, user.id)
+    assert updated.allowed_misses == 3
+    assert (
+        member.misses_remaining == 3
+    )  # 1 -> 3, delta of +2 applied on top of the existing 1
+
+
+# ========== STREAK / GRACE RECONCILIATION (per-member) ==========
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reconcile_hard_resets_streak_after_unforgiven_miss(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, allowed_misses=0
+    )
+    member = await habit_repo.get_member(habit.id, user.id)
+
+    yesterday = local_today(TZ) - timedelta(days=1)
+    member = await habit_repo.update_member(
+        member,
+        current_streak=5,
+        last_resolved_period_key=compute_period_key(
+            yesterday - timedelta(days=1), ModelHabitType.DAILY
+        ),
+    )
+
+    reconciled = await _reconcile_member(habit_repo, member, ModelHabitType.DAILY, TZ)
+
+    assert reconciled.current_streak == 0
+    assert reconciled.last_resolved_period_key == compute_period_key(
+        yesterday, ModelHabitType.DAILY
+    )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reconcile_consumes_grace_instead_of_resetting(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, allowed_misses=1
+    )
+    member = await habit_repo.get_member(habit.id, user.id)
+
+    yesterday = local_today(TZ) - timedelta(days=1)
+    member = await habit_repo.update_member(
+        member,
+        current_streak=3,
+        misses_remaining=1,
+        last_resolved_period_key=compute_period_key(
+            yesterday - timedelta(days=1), ModelHabitType.DAILY
+        ),
+    )
+
+    reconciled = await _reconcile_member(habit_repo, member, ModelHabitType.DAILY, TZ)
+
+    assert reconciled.current_streak == 3  # preserved
+    assert reconciled.misses_remaining == 0  # grace spent
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_reconcile_exhausts_grace_across_multiple_missed_days(
+    db_session: AsyncSession,
+) -> None:
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, allowed_misses=2
+    )
+    member = await habit_repo.get_member(habit.id, user.id)
+
+    four_days_ago = local_today(TZ) - timedelta(days=4)
+    member = await habit_repo.update_member(
+        member,
+        current_streak=10,
+        misses_remaining=2,
+        last_resolved_period_key=compute_period_key(
+            four_days_ago, ModelHabitType.DAILY
+        ),
+    )
+
+    reconciled = await _reconcile_member(habit_repo, member, ModelHabitType.DAILY, TZ)
+
+    assert reconciled.misses_remaining == 0
+    assert reconciled.current_streak == 0
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_weekly_habit_streak_survives_daily_gaps_within_the_week(
+    db_session: AsyncSession,
+) -> None:
+    """Regression test for the old naive engine, which ignored habit_type entirely and
+    required a check on every single calendar day even for WEEKLY habits."""
+    habit_repo = HabitRepository(db_session)
+    users_repo = UsersRepository(db_session)
+    user = await make_user(db_session, "owner", "owner@test.com")
+    habit = await _make_personal_habit(
+        habit_repo, users_repo, user.id, habit_type=HabitType.WEEKLY
+    )
+
+    result = await check_in(habit_repo, users_repo, habit.id, user.id)
+
+    assert result["my_current_streak"] == 1
+    # Reading again the same week (no new check-in) must not reset the streak just because
+    # "today" isn't the day of the original check-in.
+    read = await get_habit(habit_repo, users_repo, habit.id, user.id)
+    assert read.my_current_streak == 1

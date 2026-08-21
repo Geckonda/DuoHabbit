@@ -11,3 +11,9 @@ app.use(pinia) // !!! Установка Pinia — ПЕРВЫМ делом !!!
 app.use(router) // Потом уже роутер
 
 app.mount('#app') // Монтируем в самом конце
+
+// Регистрация сервис-воркера для push-уведомлений (без запроса разрешения -
+// его спрашиваем явно в профиле, когда юзер сам включит уведомления)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {})
+}

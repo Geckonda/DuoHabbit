@@ -8,6 +8,7 @@ export interface UserRead {
   is_superuser: boolean
   is_verified: boolean
   is_platform_admin: boolean
+  timezone: string  // IANA-имя, например Europe/Moscow — им считается "сегодня" для стриков
 }
 
 export interface UserCreate {
@@ -15,6 +16,7 @@ export interface UserCreate {
   username: string
   password: string
   is_platform_admin?: boolean  // опционально, для админов
+  timezone?: string  // берётся у браузера (Intl), бек по умолчанию поставит UTC
 }
 
 export interface UserLogin {
