@@ -47,3 +47,38 @@ Remember that services should commit, not repositories.
 3. The rest is WIP for now, woops.
 800. On startup, the app will create an admin user, credentials are `admin@duohabit.com` and `admin`.
 Change their password before going public.
+
+### CI/CD
+
+Push to `develop` triggers `.github/workflows/ci-cd.yml`: runs backend/frontend tests, then on
+success SSHes into the VPS, pulls the branch, rewrites `backend/.env` from the `BACKEND_ENV_FILE`
+GitHub secret, and runs `docker compose -f docker-compose.prod.yml up -d --build`.
+
+### Dropping the prod DB (needed after a schema change with no safe migration)
+
+There's no Alembic - `Base.metadata.create_all` only creates tables that don't exist yet, it never
+adds columns to an already-live table. Some of our own migrations (e.g. `group_member.status`) get
+an idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `main.py: init_db()` so they're safe to
+skip this step for. Others (e.g. `conversation.status`/`initiator_id`) were shipped without one on
+purpose (throwaway dev data, not worth the ceremony) - after those land, the Postgres volume has to
+be wiped by hand or the very next request touching that table 500s with a "column does not exist"
+error.
+
+Only do this after the new code is already deployed (deploying first and dropping after means the
+fresh schema comes from the new code, not the old one) - and only when you're fine losing everything
+currently in the database (fine for this project's current stage, not fine anymore once there's real
+user data worth keeping).
+
+```bash
+ssh -i ~/.ssh/duohabit_server_key -p 4723 root@duohabit.dotnetdon.ru
+
+cd /srv/duohabit   # DEPLOY_PATH
+docker compose -f docker-compose.prod.yml down -v   # stops everything, wipes the postgres volume
+docker compose -f docker-compose.prod.yml up -d --build   # fresh containers, fresh schema
+```
+
+Check it actually came back up clean:
+```bash
+docker ps
+docker compose -f docker-compose.prod.yml logs backend --tail 30
+```
