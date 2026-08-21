@@ -1,0 +1,8 @@
+{
+  "name": "dev-container",
+  "remoteUser": "root",
+  "dockerComposeFile": "docker-compose.dev.yml",
+  "service": "dev-container",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind"
+}

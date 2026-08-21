@@ -1,0 +1,81 @@
+version: '3.8'
+
+name: duohabit
+
+services:
+  # База данных PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: duohabit-postgres
+    environment:
+      POSTGRES_DB: duohabit_db
+      POSTGRES_USER: duohabit_user
+      POSTGRES_PASSWORD: duohabit_password  # В продакшене использовать secrets!
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:5433:5432"  # Только localhost, снаружи не нужен
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d  # Скрипты инициализации
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duohabit_user -d duohhabitdb"]  # Вот так правильно!
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - duohabit-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build: ./backend
+    container_name: backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - duohabit-network
+    ports:
+    # Даем Web API, но оно доступно только на localhost, а оттуда его подхватит nginx и переведет на https
+      - "127.0.0.1:8005:8005"
+    volumes:
+      - ./backend/data:/app/data
+    mem_limit: 200m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: duohabit-frontend
+    ports:
+      # Как и backend, доступен только на localhost - наружу отдаёт nginx
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - duohabit-network
+    restart: unless-stopped
+
+# Тома для персистентности данных
+volumes:
+  postgres_data:
+    name: duohabit-postgres-data
+
+# Сети для изоляции
+networks:
+  duohabit-network:
+    name: duohabit-network
+    driver: bridge

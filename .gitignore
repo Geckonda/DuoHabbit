@@ -20,7 +20,7 @@ appsettings.Development.json
 *.pid
 
 # Environment files
-*.env
+.env
 .env.local
 .env.production
 infrastructure/env/*.env
@@ -33,3 +33,6 @@ infrastructure/backups/
 
 # Docker volumes data (не коммитим)
 /postgres_data/
+.pnpm-store
+__pycache__
+.devcontainer/pgadmin/servers.json
